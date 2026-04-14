@@ -1,0 +1,606 @@
+.payment-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.payment-toolbar__button {
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.payment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.payment-card {
+  border-color: #e2e8f0;
+  background: #ffffff;
+}
+
+.payment-card--interactive {
+  padding: 1rem;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.payment-card--interactive:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.payment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.payment-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.payment-row__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.payment-row__title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.payment-row__copy {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.payment-row__copy + .payment-row__copy {
+  margin-top: 0.25rem;
+}
+
+.payment-row__amount {
+  text-align: right;
+}
+
+.payment-row__amount-value {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.payment-row__amount-copy {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.payment-row__chevron {
+  color: #64748b;
+}
+
+.transaction-status--confirmed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.transaction-status--pending,
+.transaction-status--pending_sync {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.transaction-status--failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.transaction-status--default {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.transaction-empty,
+.transaction-loading,
+.scan-loader,
+.scan-stage,
+.payment-success-banner,
+.payment-status-banner,
+.payment-success-box,
+.share-link-box,
+.wallet-address-box,
+.receive-help-box,
+.withdraw-balance-box,
+.withdraw-alert,
+.payment-payload-box,
+.payment-acceptance-box,
+.pending-payment-box,
+.expired-payment-box,
+.settings-note-box {
+  border-radius: 1.35rem;
+}
+
+.transaction-empty {
+  padding: 2rem;
+  text-align: center;
+}
+
+.transaction-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.transaction-detail__amount-label,
+.transaction-detail__label {
+  margin-bottom: 0.3rem;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.transaction-detail__amount-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.transaction-detail__section {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transaction-detail__code-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.transaction-detail__code {
+  flex: 1;
+  padding: 0.75rem;
+  border-radius: 0.85rem;
+  background: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-loader,
+.scan-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--muted);
+}
+
+.scan-loader svg {
+  color: var(--primary);
+}
+
+.scan-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 1rem;
+  background: #000000;
+}
+
+.send-payment,
+.receive-payment,
+.receive-page__columns,
+.withdraw-form__grid,
+.withdraw-balance-grid,
+.share-dialog__actions,
+.share-dialog__channels,
+.settings-actions,
+.pending-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.send-payment__hero,
+.receive-page__hero,
+.withdraw-page__hero {
+  overflow: hidden;
+}
+
+.send-payment__hero-header,
+.receive-page__hero-header,
+.withdraw-page__hero-header {
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.98));
+  color: #ffffff;
+}
+
+.send-payment__hero-icon,
+.receive-page__hero-icon,
+.withdraw-page__hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #a7f3d0;
+}
+
+.send-payment__hero-title,
+.receive-page__hero-title,
+.withdraw-page__hero-title {
+  font-size: clamp(1.8rem, 4vw, 2.3rem);
+  font-weight: 700;
+}
+
+.send-payment__hero-copy,
+.receive-page__hero-copy,
+.withdraw-page__hero-copy {
+  margin-top: 0.75rem;
+  max-width: 40rem;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.send-payment__content,
+.receive-page__hero-content,
+.withdraw-page__hero-content {
+  padding: 1.5rem;
+}
+
+.send-payment__stack,
+.withdraw-form,
+.receive-payment__stack,
+.receive-page__stack,
+.pending-list,
+.settings-page__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field-group__label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.field-group__hint {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.field-group__required {
+  color: #ef4444;
+}
+
+.form-grid--two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.wallet-address-box,
+.share-link-box,
+.withdraw-balance-box,
+.payment-payload-box,
+.payment-acceptance-box,
+.receive-help-box,
+.settings-note-box {
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.wallet-address-box__label,
+.share-link-box__label,
+.withdraw-balance-box__label,
+.receive-help-box__label {
+  color: #64748b;
+  font-size: 0.76rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.wallet-address-box__value,
+.share-link-box__value {
+  margin-top: 0.7rem;
+  color: #0f172a;
+  font-size: 0.88rem;
+  word-break: break-all;
+}
+
+.wallet-address-box__hint {
+  margin-top: 0.5rem;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.payment-form__actions,
+.receive-payment__actions,
+.share-dialog__actions,
+.share-dialog__channels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.payment-form__textarea,
+.receive-payment__textarea {
+  min-height: 10rem;
+}
+
+.payment-payload-box__textarea {
+  min-height: 9.5rem;
+}
+
+.receive-page__columns {
+  grid-template-columns: 1.15fr 0.85fr;
+  align-items: start;
+}
+
+.receive-page__side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.receive-page__qr-shell {
+  display: flex;
+  justify-content: center;
+}
+
+.receive-page__qr-frame {
+  padding: 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 2rem;
+  background: #f8fafc;
+  box-shadow: inset 0 2px 12px rgba(148, 163, 184, 0.14);
+}
+
+.receive-page__qr-image {
+  width: 14rem;
+  height: 14rem;
+  padding: 0.75rem;
+  border-radius: 1rem;
+  background: #ffffff;
+}
+
+.receive-page__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.receive-help-box {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.receive-help-box svg {
+  margin-top: 0.2rem;
+}
+
+.share-channel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.95rem;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.withdraw-balance-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.withdraw-balance-box__copy {
+  margin-top: 0.6rem;
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.withdraw-alert {
+  padding: 1rem;
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.withdraw-alert__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.payment-success-banner,
+.payment-status-banner,
+.payment-success-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+}
+
+.payment-success-banner,
+.payment-success-box {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.payment-status-banner {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.payment-error {
+  color: #dc2626;
+  font-size: 0.9rem;
+}
+
+.payment-meta {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.pending-card {
+  padding: 1.5rem;
+}
+
+.pending-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pending-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.pending-card__copy {
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.pending-grid {
+  grid-template-columns: 1fr;
+}
+
+.pending-payment-box,
+.expired-payment-box {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.pending-payment-box__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pending-payment-box__title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pending-payment-box__copy {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.pending-payment-box__details {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.pending-payment-box__actions {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.expired-payment-box {
+  border-color: rgba(239, 68, 68, 0.26);
+  background: rgba(254, 242, 242, 0.7);
+}
+
+.expired-payment-box__label {
+  color: #dc2626;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-section__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.settings-card {
+  padding: 1rem;
+}
+
+.settings-user-id {
+  color: #0f172a;
+  font-size: 0.88rem;
+  word-break: break-all;
+}
+
+@media (max-width: 1024px) {
+  .receive-page__columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .form-grid--two,
+  .payment-form__actions,
+  .receive-payment__actions,
+  .withdraw-balance-grid,
+  .share-dialog__actions,
+  .share-dialog__channels {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-row {
+    align-items: flex-start;
+  }
+
+  .payment-row__amount {
+    text-align: left;
+  }
+}

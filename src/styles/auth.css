@@ -1,0 +1,124 @@
+.auth-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.auth-layout__panel {
+  width: min(28rem, 100%);
+}
+
+.auth-layout__intro {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.auth-layout__logo {
+  margin-bottom: 0.5rem;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.auth-layout__title {
+  margin-bottom: 0.5rem;
+  font-size: 1.7rem;
+  font-weight: 700;
+}
+
+.auth-layout__description {
+  color: var(--muted-foreground);
+}
+
+.auth-layout__card {
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.auth-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auth-form__label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.auth-form__hint {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.auth-method-card {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(232, 237, 244, 0.45);
+}
+
+.auth-method-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.auth-method-card__fallback {
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  text-align: center;
+}
+
+.auth-loading-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+}
+
+.auth-passkey-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.auth-switch {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.auth-switch__link {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.auth-google-button {
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .auth-layout__card {
+    padding: 1.35rem;
+    border-radius: 20px;
+  }
+}

@@ -1,0 +1,92 @@
+import { ethers } from 'ethers';
+
+export const SUPPORTED_TOKENS = ['CELO', 'cUSD'] as const;
+export type SupportedToken = (typeof SUPPORTED_TOKENS)[number];
+
+export const MINIMUM_TRANSFER_AMOUNTS: Record<SupportedToken, string> = {
+  CELO: '0.001',
+  cUSD: '0.01',
+};
+
+export function formatWalletAddress(address: string, head = 8, tail = 6) {
+  if (!address) {
+    return '';
+  }
+
+  if (address.length <= head + tail) {
+    return address;
+  }
+
+  return `${address.slice(0, head)}...${address.slice(-tail)}`;
+}
+
+export function getMinimumAmount(token: SupportedToken) {
+  return MINIMUM_TRANSFER_AMOUNTS[token];
+}
+
+export function isAmountBelowMinimum(amount: string, token: SupportedToken) {
+  try {
+    const parsedAmount = ethers.parseUnits(amount, 18);
+    const minimumAmount = ethers.parseUnits(MINIMUM_TRANSFER_AMOUNTS[token], 18);
+    return parsedAmount < minimumAmount;
+  } catch {
+    return true;
+  }
+}
+
+export function getMinimumAmountError(amount: string, token: SupportedToken) {
+  if (!amount) {
+    return '';
+  }
+
+  return isAmountBelowMinimum(amount, token)
+    ? `Minimum ${token} amount is ${MINIMUM_TRANSFER_AMOUNTS[token]} ${token}.`
+    : '';
+}
+
+export async function copyTextToClipboard(text: string) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard is not available in this environment.');
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'absolute';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  const successful = document.execCommand('copy');
+  document.body.removeChild(textarea);
+
+  if (!successful) {
+    throw new Error('Copy is not supported in this browser.');
+  }
+}
+
+export function buildWalletShareText(address: string) {
+  return `Send CELO or cUSD to my OfflinePay wallet address: ${address}`;
+}
+
+export function buildWalletShareLink(address: string) {
+  return `celo:${address}`;
+}
+
+export function downloadDataUrl(dataUrl: string, filename: string) {
+  if (typeof document === 'undefined') {
+    throw new Error('File download is not available in this environment.');
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = dataUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}

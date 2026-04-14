@@ -1,0 +1,8 @@
+@import "./styles/global.css";
+@import "./styles/ui.css";
+@import "./styles/auth.css";
+@import "./styles/landing.css";
+@import "./styles/dashboard.css";
+@import "./styles/payments.css";
+@import "./styles/admin.css";
+@import "./styles/utilities.css";
