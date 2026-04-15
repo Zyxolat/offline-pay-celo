@@ -13,11 +13,14 @@
   font-weight: 600;
   line-height: 1;
   text-align: center;
-  transition: transform 160ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  white-space: nowrap;
+  box-shadow: 0 14px 30px -22px rgba(15, 23, 42, 0.28);
+  transition: transform 220ms ease, background-color 220ms ease, color 220ms ease, border-color 220ms ease, box-shadow 220ms ease, opacity 220ms ease;
 }
 
 .button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: 0 20px 34px -22px rgba(15, 23, 42, 0.34);
 }
 
 .button:focus-visible {
@@ -29,15 +32,16 @@
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 .button--default {
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f172a, #1e293b);
   color: var(--primary-foreground);
 }
 
 .button--default:hover:not(:disabled) {
-  background: #16905f;
+  background: linear-gradient(135deg, #111c31, #293548);
 }
 
 .button--destructive {
@@ -53,24 +57,30 @@
   border-color: var(--input);
   background: var(--card);
   color: var(--foreground);
+  box-shadow: none;
 }
 
 .button--outline:hover:not(:disabled) {
   background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
 .button--secondary {
-  background: var(--secondary);
+  background: transparent;
+  border-color: #cbd5e1;
   color: var(--secondary-foreground);
+  color: var(--foreground);
+  box-shadow: none;
 }
 
 .button--secondary:hover:not(:disabled) {
-  background: #121827;
+  background: #e2e8f0;
 }
 
 .button--ghost {
   background: transparent;
   color: var(--foreground);
+  box-shadow: none;
 }
 
 .button--ghost:hover:not(:disabled) {
@@ -84,6 +94,14 @@
   border-radius: 0;
   background: transparent;
   color: var(--primary);
+}
+
+.button[data-loading="true"] {
+  pointer-events: none;
+}
+
+.button__spinner {
+  animation: app-spin 1s linear infinite;
 }
 
 .button--link:hover:not(:disabled) {
@@ -463,6 +481,19 @@
 }
 
 @media (max-width: 640px) {
+  .button {
+    width: 100%;
+  }
+
+  .button--icon,
+  .page-header .button,
+  .landing-navbar .button,
+  .landing-navbar__toggle,
+  .transaction-detail__code-row .button,
+  .transaction-row__actions .button {
+    width: auto;
+  }
+
   .dialog-content {
     width: calc(100% - 1rem);
     padding: 1.1rem;

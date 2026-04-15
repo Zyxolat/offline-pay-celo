@@ -1,34 +1,40 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
 :root {
-  --background: #f4f7fb;
-  --foreground: #131b2f;
+  --background: #f8fafc;
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #131b2f;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #131b2f;
-  --primary: #1fa971;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
   --primary-foreground: #ffffff;
-  --secondary: #1b2337;
+  --secondary: #1e293b;
   --secondary-foreground: #f8fafc;
-  --muted: #e8edf4;
-  --muted-foreground: #667085;
-  --accent: #f7c94b;
-  --accent-foreground: #131b2f;
+  --muted: #eef2f7;
+  --muted-foreground: #64748b;
+  --accent: #f59e0b;
+  --accent-foreground: #0f172a;
+  --success: #22c55e;
+  --success-foreground: #14532d;
+  --warning: #f59e0b;
+  --warning-foreground: #92400e;
+  --error: #ef4444;
+  --error-foreground: #991b1b;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #dbe3ee;
-  --input: #dbe3ee;
-  --ring: rgba(31, 169, 113, 0.28);
-  --radius: 18px;
-  --hero-gradient: linear-gradient(135deg, #161d31 0%, #1c2945 52%, #16283a 100%);
-  --card-glow: 0 24px 60px -32px rgba(31, 169, 113, 0.35);
-  --glass: rgba(255, 255, 255, 0.7);
+  --border: #e2e8f0;
+  --input: #dbe4f0;
+  --ring: rgba(15, 23, 42, 0.16);
+  --radius: 16px;
+  --hero-gradient: linear-gradient(135deg, #0f172a 0%, #172554 56%, #0f172a 100%);
+  --card-glow: 0 30px 80px -44px rgba(15, 23, 42, 0.28);
+  --glass: rgba(255, 255, 255, 0.78);
   --glass-border: rgba(255, 255, 255, 0.22);
-  --font-display: "Space Grotesk", sans-serif;
-  --font-body: "Inter", sans-serif;
-  --shadow-soft: 0 18px 50px -30px rgba(15, 23, 42, 0.28);
-  --shadow-card: 0 24px 50px -32px rgba(15, 23, 42, 0.22);
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --shadow-soft: 0 20px 48px -32px rgba(15, 23, 42, 0.22);
+  --shadow-card: 0 22px 52px -34px rgba(15, 23, 42, 0.18);
   --content-width: min(1120px, calc(100% - 2rem));
   --content-width-narrow: min(720px, calc(100% - 2rem));
   --content-width-medium: min(860px, calc(100% - 2rem));
@@ -53,7 +59,9 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background: var(--background);
+  background:
+    radial-gradient(circle at top, rgba(148, 163, 184, 0.12), transparent 26%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   color: var(--foreground);
   font-family: var(--font-body);
   line-height: 1.5;

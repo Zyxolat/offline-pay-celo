@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -41,14 +42,35 @@ function buttonVariants({
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   asChild?: boolean;
+  loading?: boolean;
   variant?: ButtonVariant;
   size?: ButtonSize;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", size = "default", asChild = false, ...props }, ref) => {
+  ({ className, variant = "default", size = "default", asChild = false, loading = false, children, disabled, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return <Comp className={buttonVariants({ variant, size, className })} ref={ref} {...props} />;
+
+    if (asChild) {
+      return (
+        <Comp className={buttonVariants({ variant, size, className })} ref={ref} {...props}>
+          {children}
+        </Comp>
+      );
+    }
+
+    return (
+      <Comp
+        className={buttonVariants({ variant, size, className })}
+        ref={ref}
+        disabled={disabled || loading}
+        data-loading={loading ? "true" : "false"}
+        {...props}
+      >
+        {loading ? <Loader2 className="button__spinner" size={16} /> : null}
+        {children}
+      </Comp>
+    );
   },
 );
 Button.displayName = "Button";
