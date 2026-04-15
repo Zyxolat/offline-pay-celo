@@ -1,18 +1,27 @@
-import { SendPayment } from '@/components/offline/SendPayment';
+import { ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
+import { SendPayment } from "@/components/offline/SendPayment";
+import { Button } from "@/components/ui/button";
 
 export const SendPage = () => {
-  return (
-    <div className="min-h-screen bg-background pb-20">
-      <div className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
-          <h1 className="flex-1 text-center font-display text-xl font-semibold">Send Payment</h1>
-          <div className="w-10" />
-        </div>
-      </div>
+  const navigate = useNavigate();
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-2xl mx-auto">
+  return (
+    <div className="fintech-page">
+      <header className="fintech-header">
+        <div className="fintech-header__inner">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft size={18} />
+          </Button>
+          <div className="fintech-header__title">Send Payment</div>
+          <div className="fintech-header__spacer" />
+        </div>
+      </header>
+
+      <main className="fintech-main">
         <SendPayment />
-      </div>
+      </main>
     </div>
   );
 };
