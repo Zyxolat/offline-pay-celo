@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { toast } from '@/components/ui/sonner';
-import { walletAPI } from '@/services/apiClient';
-import { copyTextToClipboard, formatWalletAddress } from '@/lib/wallet';
+import { useEffect, useState } from "react";
+import { ArrowLeft, Copy, Loader2 } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+
+import TransactionListItem from "@/components/payments/TransactionListItem";
+import TransactionStatus from "@/components/payments/TransactionStatus";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
+import { copyTextToClipboard, formatWalletAddress } from "@/lib/wallet";
+import { walletAPI } from "@/services/apiClient";
 
 export const TransactionsPage = () => {
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'confirmed' | 'pending' | 'failed'>('all');
+  const [filter, setFilter] = useState<"all" | "confirmed" | "pending" | "failed">("all");
 
   useEffect(() => {
     void loadTransactions();
@@ -20,117 +21,97 @@ export const TransactionsPage = () => {
 
   const loadTransactions = async () => {
     try {
-      const res = await walletAPI.getTransactions(100, 0);
-      setTransactions(Array.isArray(res.data?.data?.transactions) ? res.data.data.transactions : []);
+      const response = await walletAPI.getTransactions(100, 0);
+      setTransactions(Array.isArray(response.data?.data?.transactions) ? response.data.data.transactions : []);
     } catch (error) {
-      console.error('Error loading transactions:', error);
+      console.error("Error loading transactions:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const filtered = transactions.filter((tx) => filter === 'all' || tx?.status === filter);
-
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800';
-      case 'pending':
-      case 'pending_sync':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const formatDate = (value?: string) => {
-    if (!value) {
-      return 'Unknown date';
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (filter === "all") {
+      return true;
     }
 
-    const parsedDate = new Date(value);
-    return Number.isNaN(parsedDate.getTime()) ? 'Unknown date' : parsedDate.toLocaleDateString();
-  };
+    if (filter === "pending") {
+      return transaction?.status === "pending" || transaction?.status === "pending_sync";
+    }
+
+    return transaction?.status === filter;
+  });
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
-      <div className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
+    <div className="fintech-page">
+      <header className="fintech-header">
+        <div className="fintech-header__inner">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </Button>
-          <h1 className="flex-1 text-center font-display text-xl font-semibold">Transactions</h1>
-          <div className="w-10" />
+          <div className="fintech-header__title">Transactions</div>
+          <div className="fintech-header__spacer" />
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Filter Buttons */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {(['all', 'confirmed', 'pending', 'failed'] as const).map(f => (
-            <Button
-              key={f}
-              variant={filter === f ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter(f)}
-              className="capitalize whitespace-nowrap"
-            >
-              {f === 'pending' ? 'Pending Sync' : f}
+      <main className="fintech-main">
+        <section className="fintech-card">
+          <div className="fintech-card__content">
+            <div className="fintech-card__eyebrow">Activity ledger</div>
+            <h1 className="fintech-card__title">Track every queued and settled transfer</h1>
+            <p className="fintech-card__copy">
+              Review the status, amount, and recipient for every transaction captured in the wallet.
+            </p>
+          </div>
+        </section>
+
+        <div className="fintech-actions transaction-filter-bar">
+          {(["all", "confirmed", "pending", "failed"] as const).map((status) => (
+            <Button key={status} variant={filter === status ? "default" : "outline"} size="sm" onClick={() => setFilter(status)}>
+              {status === "pending" ? "Pending" : status}
             </Button>
           ))}
         </div>
 
         {loading ? (
-          <div className="text-center py-12">
-            <Loader2 size={40} className="animate-spin mx-auto text-primary" />
+          <div className="loading-state">
+            <Loader2 size={34} className="loading-state__icon" />
           </div>
-        ) : filtered.length > 0 ? (
-          <div className="space-y-3">
-            {filtered.map(tx => (
-              <Card
-                key={tx.id}
-                className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => navigate(`/transactions/${tx.id}`)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <p className="text-sm font-semibold text-foreground">Sent {tx.currency || 'CELO'}</p>
-                      <Badge variant="outline" className={getStatusColor(tx?.status)}>
-                        {tx?.status === 'pending_sync' ? 'Queued' : tx?.status || 'unknown'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {tx?.recipient ? formatWalletAddress(tx.recipient, 14, 10) : 'Recipient unavailable'}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">{formatDate(tx?.timestamp)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-foreground">-{tx?.amount || '0'}</p>
-                    <p className="text-xs text-muted-foreground">Confirmations: {tx?.confirmations ?? 0}</p>
-                  </div>
-                  <ChevronRight size={20} className="text-muted-foreground ml-4" />
-                </div>
-              </Card>
+        ) : filteredTransactions.length > 0 ? (
+          <div className="transaction-list">
+            {filteredTransactions.map((transaction) => (
+              <TransactionListItem
+                key={transaction.id}
+                amount={transaction?.amount || "0"}
+                currency={transaction?.currency || "CELO"}
+                recipient={transaction?.recipient}
+                status={transaction?.status}
+                timestamp={transaction?.timestamp}
+                onClick={() => navigate(`/transactions/${transaction.id}`)}
+              />
             ))}
           </div>
         ) : (
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">No transactions found</p>
-          </Card>
+          <div className="transaction-empty-state">No transactions found for this filter yet.</div>
         )}
-      </div>
+      </main>
     </div>
   );
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) {
+    return "Unknown date";
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Unknown date" : parsed.toLocaleString();
 };
 
 export const TransactionDetailPage = () => {
   const navigate = useNavigate();
   const { txId } = useParams<{ txId: string }>();
-  const [tx, setTx] = useState<any>(null);
+  const [transaction, setTransaction] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -144,13 +125,11 @@ export const TransactionDetailPage = () => {
     }
 
     try {
-      // In production, would call API
-      const allRes = await walletAPI.getTransactions(1000, 0);
-      const allTransactions = Array.isArray(allRes.data?.data?.transactions) ? allRes.data.data.transactions : [];
-      const found = allTransactions.find((t: any) => t?.id === txId);
-      setTx(found);
+      const response = await walletAPI.getTransactions(1000, 0);
+      const allTransactions = Array.isArray(response.data?.data?.transactions) ? response.data.data.transactions : [];
+      setTransaction(allTransactions.find((item: any) => item?.id === txId));
     } catch (error) {
-      console.error('Error loading detail:', error);
+      console.error("Error loading detail:", error);
     } finally {
       setLoading(false);
     }
@@ -163,93 +142,84 @@ export const TransactionDetailPage = () => {
 
     try {
       await copyTextToClipboard(text);
-      toast.success('Copied to clipboard.');
+      toast.success("Copied to clipboard.");
     } catch (error: any) {
-      toast.error(error?.message || 'Unable to copy value.');
+      toast.error(error?.message || "Unable to copy value.");
     }
-  };
-
-  const formatDateTime = (value?: string) => {
-    if (!value) {
-      return 'Unknown date';
-    }
-
-    const parsedDate = new Date(value);
-    return Number.isNaN(parsedDate.getTime()) ? 'Unknown date' : parsedDate.toLocaleString();
   };
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
-      <div className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
+    <div className="fintech-page">
+      <header className="fintech-header">
+        <div className="fintech-header__inner">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </Button>
-          <h1 className="flex-1 text-center font-display text-xl font-semibold">Transaction Details</h1>
-          <div className="w-10" />
+          <div className="fintech-header__title">Transaction Details</div>
+          <div className="fintech-header__spacer" />
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-md mx-auto">
+      <main className="fintech-main">
         {loading ? (
-          <div className="text-center py-12">
-            <Loader2 size={40} className="animate-spin mx-auto text-primary" />
+          <div className="loading-state">
+            <Loader2 size={34} className="loading-state__icon" />
           </div>
-        ) : tx ? (
-          <div className="space-y-4">
-            <Card className="p-6 space-y-4">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Amount</p>
-                <p className="text-3xl font-bold text-foreground">{tx.amount || '0'} {tx.currency || 'CELO'}</p>
+        ) : transaction ? (
+          <div className="fintech-grid transaction-detail-layout">
+            <section className="fintech-card flow-card">
+              <div className="fintech-card__eyebrow">Settlement detail</div>
+              <h1 className="fintech-card__title">
+                {transaction.amount || "0"} {transaction.currency || "CELO"}
+              </h1>
+              <div className="flow-card__body">
+                <TransactionStatus status={transaction.status} timestamp={transaction.timestamp} hash={transaction.txHash} />
               </div>
+            </section>
 
-              <div className="border-t border-border pt-4 space-y-3">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Status</p>
-                  <Badge>{tx.status || 'unknown'}</Badge>
+            <section className="fintech-card flow-card">
+              <h2 className="flow-card__title">Transaction summary</h2>
+              <div className="flow-card__body">
+                <div className="flow-summary">
+                  <div className="flow-summary__row">
+                    <span className="flow-summary__label">Recipient</span>
+                    <span className="flow-summary__value">{transaction.recipient || "Recipient unavailable"}</span>
+                  </div>
+                  <div className="flow-summary__row">
+                    <span className="flow-summary__label">Short address</span>
+                    <span className="flow-summary__value">
+                      {transaction.recipient ? formatWalletAddress(transaction.recipient, 10, 8) : "Unavailable"}
+                    </span>
+                  </div>
+                  <div className="flow-summary__row">
+                    <span className="flow-summary__label">Recorded</span>
+                    <span className="flow-summary__value">{formatDateTime(transaction.timestamp)}</span>
+                  </div>
+                  <div className="flow-summary__row">
+                    <span className="flow-summary__label">Confirmations</span>
+                    <span className="flow-summary__value">{transaction.confirmations ?? 0}</span>
+                  </div>
                 </div>
 
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Recipient</p>
-                  <div className="flex items-center gap-2">
-                    <code className="text-xs bg-muted p-2 rounded flex-1 truncate">{tx.recipient || 'Recipient unavailable'}</code>
-                    <Button size="sm" variant="ghost" onClick={() => void handleCopy(tx.recipient)}>
-                      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2'%3E%3C/path%3E%3Cpath d='M15 2H9a1 1 0 00-1 1v2a1 1 0 001 1h6a1 1 0 001-1V3a1 1 0 00-1-1z'%3E%3C/path%3E%3C/svg%3E" alt="copy" />
+                <div className="fintech-actions">
+                  <Button variant="outline" onClick={() => void handleCopy(transaction.recipient)}>
+                    <Copy size={16} />
+                    Copy Recipient
+                  </Button>
+                  {transaction.txHash ? (
+                    <Button variant="secondary" onClick={() => void handleCopy(transaction.txHash)}>
+                      <Copy size={16} />
+                      Copy Hash
                     </Button>
-                  </div>
-                </div>
-
-                {tx.txHash && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Transaction Hash</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs bg-muted p-2 rounded flex-1 truncate">{tx.txHash}</code>
-                      <Button size="sm" variant="ghost" onClick={() => void handleCopy(tx.txHash)}>
-                        Copy
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Date</p>
-                  <p className="text-sm">{formatDateTime(tx.timestamp)}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Confirmations</p>
-                  <p className="text-sm">{tx.confirmations ?? 0}</p>
+                  ) : null}
                 </div>
               </div>
-            </Card>
+            </section>
           </div>
         ) : (
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">Transaction not found</p>
-          </Card>
+          <div className="transaction-empty-state">Transaction not found.</div>
         )}
-      </div>
+      </main>
     </div>
   );
 };

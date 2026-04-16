@@ -13,13 +13,14 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import TransactionListItem from '@/components/payments/TransactionListItem';
+import WalletCard from '@/components/payments/WalletCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/sonner';
 import { walletAPI, queueAPI, authAPI } from '@/services/apiClient';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
-import { formatWalletAddress } from '@/lib/wallet';
 import { clearSession, getStoredUser } from '@/lib/auth';
 
 interface WalletBalance {
@@ -139,17 +140,6 @@ export const Dashboard = () => {
     navigate('/auth/login');
   };
 
-  const formatStatusLabel = (status?: string) => (status ? status.replace(/_/g, ' ') : 'unknown');
-
-  const formatTimestamp = (timestamp?: string) => {
-    if (!timestamp) {
-      return 'Unknown time';
-    }
-
-    const parsedDate = new Date(timestamp);
-    return Number.isNaN(parsedDate.getTime()) ? 'Unknown time' : parsedDate.toLocaleString();
-  };
-
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_52%,_#f8fafc_100%)] pb-20">
       <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
@@ -187,22 +177,12 @@ export const Dashboard = () => {
               <div className="mb-5 inline-flex rounded-2xl bg-white/10 p-3 text-emerald-200">
                 <Wallet size={22} />
               </div>
-              <p className="text-sm uppercase tracking-[0.28em] text-slate-300">Available balance</p>
-              {loading ? (
-                <div className="mt-4 flex items-center gap-3 text-slate-300">
-                  <Loader2 className="animate-spin" />
-                  Loading wallet balances...
-                </div>
-              ) : (
-                <>
-                  <h2 className="mt-4 font-display text-5xl font-bold">${balance?.cUSD || '0'}</h2>
-                  <p className="mt-2 text-sm text-slate-300">≈ {balance?.CELO || '0'} CELO</p>
-                  <div className="mt-6 space-y-1 text-sm text-slate-300">
-                    <p>{user?.email || 'Wallet user'}</p>
-                    <p>{balance?.address ? formatWalletAddress(balance.address, 10, 8) : 'Address unavailable'}</p>
-                  </div>
-                </>
-              )}
+              <WalletCard
+                address={balance?.address}
+                balance={`$${balance?.cUSD || '0'}`}
+                subtitle={loading ? 'Loading wallet balances...' : `≈ ${balance?.CELO || '0'} CELO • ${user?.email || 'Wallet user'}`}
+                loading={loading}
+              />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
@@ -257,20 +237,14 @@ export const Dashboard = () => {
                 </div>
               ) : (
                 transactions.map((transaction) => (
-                  <div key={transaction.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-950">{transaction.amount || '0'} {transaction.currency || 'CELO'}</p>
-                      <p className="mt-1 truncate text-sm text-slate-500">
-                        {transaction.recipient ? formatWalletAddress(transaction.recipient, 10, 8) : 'Recipient unavailable'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <div className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-medium capitalize text-slate-700">
-                        {formatStatusLabel(transaction.status)}
-                      </div>
-                      <p className="mt-2 text-xs text-slate-500">{formatTimestamp(transaction.timestamp)}</p>
-                    </div>
-                  </div>
+                  <TransactionListItem
+                    key={transaction.id}
+                    amount={transaction.amount || '0'}
+                    currency={transaction.currency || 'CELO'}
+                    recipient={transaction.recipient}
+                    status={transaction.status}
+                    timestamp={transaction.timestamp}
+                  />
                 ))
               )}
             </CardContent>
