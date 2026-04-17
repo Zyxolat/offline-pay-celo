@@ -1,14 +1,14 @@
 import { useState, type FormEvent } from "react";
+import { isAddress } from "ethers";
 
-import type { OfflineTransaction } from "@/components/PaymentCard";
 import Button from "@/components/UI/Button";
 import Input from "@/components/UI/Input";
 import { toast } from "@/components/ui/sonner";
-import { sendCelo } from "@/utils/sendCelo";
+import { createPayment } from "@/utils/contract";
 
 interface PaymentFormProps {
   disabled?: boolean;
-  onSubmit?: (transaction: OfflineTransaction) => void;
+  onSubmit?: () => Promise<void> | void;
 }
 
 type FeedbackState =
@@ -18,17 +18,10 @@ type FeedbackState =
     }
   | null;
 
-const createTransactionId = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `payment-${Date.now()}`;
-};
-
 export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) => {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
+  const [durationHours, setDurationHours] = useState("24");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
@@ -42,9 +35,17 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
     const trimmedRecipient = recipient.trim();
     const trimmedAmount = amount.trim();
     const parsedAmount = Number(trimmedAmount);
+    const parsedDurationHours = Number(durationHours.trim());
 
     if (!trimmedRecipient) {
       const message = "Recipient address is required.";
+      setFeedback({ type: "error", text: message });
+      toast.error("Payment failed", { description: message });
+      return;
+    }
+
+    if (!isAddress(trimmedRecipient)) {
+      const message = "Enter a valid Celo wallet address.";
       setFeedback({ type: "error", text: message });
       toast.error("Payment failed", { description: message });
       return;
@@ -57,32 +58,34 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       return;
     }
 
+    if (!durationHours.trim() || Number.isNaN(parsedDurationHours) || parsedDurationHours <= 0) {
+      const message = "Enter a deadline duration greater than 0 hours.";
+      setFeedback({ type: "error", text: message });
+      toast.error("Payment failed", { description: message });
+      return;
+    }
+
     setLoading(true);
     setFeedback(null);
 
     try {
-      const { hash } = await sendCelo(trimmedRecipient, trimmedAmount);
-      const successMessage = `Payment sent successfully. Transaction hash: ${hash}`;
-
-      console.log("Payment confirmed:", hash);
+      const { hash, paymentId } = await createPayment(trimmedRecipient, Math.floor(parsedDurationHours * 3600), trimmedAmount);
+      const successMessage = paymentId === null
+        ? `Payment created. Transaction hash: ${hash}`
+        : `Payment #${paymentId} created successfully. Transaction hash: ${hash}`;
 
       setFeedback({ type: "success", text: successMessage });
-      toast.success("CELO sent successfully", {
+      toast.success("Payment locked successfully", {
         description: `Transaction confirmed: ${hash.slice(0, 10)}...${hash.slice(-8)}`,
       });
 
-      onSubmit?.({
-        id: createTransactionId(),
-        amount: parsedAmount,
-        recipient: trimmedRecipient,
-        unlockTime: Date.now(),
-        status: "claimed",
-      });
+      await onSubmit?.();
 
       setRecipient("");
       setAmount("");
+      setDurationHours("24");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to send CELO right now. Please try again.";
+      const message = error instanceof Error ? error.message : "Unable to create the payment right now. Please try again.";
       setFeedback({ type: "error", text: message });
       toast.error("Payment failed", { description: message });
     } finally {
@@ -93,9 +96,9 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
   return (
     <form className="offlinepay-form-card" onSubmit={handleSubmit}>
       <div className="offlinepay-section-heading">
-        <p className="offlinepay-eyebrow">Send payment</p>
-        <h2>Transfer real CELO on Alfajores</h2>
-        <p>Enter a wallet address and amount, approve the MetaMask prompt, and wait for confirmation.</p>
+        <p className="offlinepay-eyebrow">Lock payment</p>
+        <h2>Create a time-locked payment</h2>
+        <p>Lock real CELO in the contract, give the recipient a deadline, and let MetaMask handle signing.</p>
       </div>
 
       <div className="offlinepay-form-grid">
@@ -106,7 +109,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
           placeholder="0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
           value={recipient}
           onChange={(event) => setRecipient(event.target.value)}
-          hint="Use a valid Celo wallet address on the Alfajores Testnet."
+          hint="Use a valid wallet address on Celo Alfajores."
           autoComplete="off"
           spellCheck={false}
         />
@@ -119,7 +122,18 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
           placeholder="0.1"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
-          hint="The transaction will send native CELO from your connected MetaMask wallet."
+          hint="This CELO amount will be locked in the contract until accepted or refunded."
+        />
+        <Input
+          id="celo-duration"
+          label="Deadline (hours)"
+          type="number"
+          min="1"
+          step="1"
+          placeholder="24"
+          value={durationHours}
+          onChange={(event) => setDurationHours(event.target.value)}
+          hint="The recipient must accept before this deadline or the sender can reclaim the funds."
         />
       </div>
 
@@ -133,7 +147,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       ) : null}
 
       <Button type="submit" disabled={disabled || loading} fullWidth>
-        {loading ? "Sending..." : "Send CELO"}
+        {loading ? "Locking..." : "Create Time-Locked Payment"}
       </Button>
     </form>
   );
