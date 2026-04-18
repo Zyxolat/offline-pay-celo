@@ -1,4 +1,6 @@
-export const TIMELOCK_CONTRACT_ADDRESS = (import.meta.env.VITE_TIMELOCK_CONTRACT_ADDRESS || "").trim();
+import { OFFLINEPAY_CONTRACT_ADDRESS } from "@/config/celo";
+
+export const TIMELOCK_CONTRACT_ADDRESS = OFFLINEPAY_CONTRACT_ADDRESS;
 
 export const TIMELOCK_ABI = [
   "event PaymentCreated(uint256 indexed paymentId, address indexed sender, address indexed recipient, uint256 amount, uint256 deadline)",

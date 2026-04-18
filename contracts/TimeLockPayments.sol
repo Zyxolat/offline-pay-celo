@@ -65,7 +65,7 @@ contract TimeLockPayments {
         require(msg.sender == payment.recipient, "Only recipient can accept");
         require(!payment.claimed, "Payment already claimed");
         require(!payment.refunded, "Payment already refunded");
-        require(block.timestamp <= payment.deadline, "Payment deadline passed");
+        require(block.timestamp >= payment.deadline, "Payment is still locked");
 
         uint256 amount = payment.amount;
 
@@ -84,7 +84,7 @@ contract TimeLockPayments {
         require(msg.sender == payment.sender, "Only sender can refund");
         require(!payment.claimed, "Payment already claimed");
         require(!payment.refunded, "Payment already refunded");
-        require(block.timestamp > payment.deadline, "Payment is still active");
+        require(block.timestamp < payment.deadline, "Payment already unlocked");
 
         uint256 amount = payment.amount;
 

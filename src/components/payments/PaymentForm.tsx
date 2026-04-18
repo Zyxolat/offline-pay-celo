@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { isAddress } from "ethers";
+import { Loader2, TimerReset } from "lucide-react";
 
-import Button from "@/components/UI/Button";
-import Input from "@/components/UI/Input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
-import { createPayment } from "@/utils/contract";
+import { createPayment, estimateCreatePaymentGas } from "@/utils/contract";
 
 interface PaymentFormProps {
   disabled?: boolean;
@@ -24,6 +25,55 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
   const [durationHours, setDurationHours] = useState("24");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [gasEstimate, setGasEstimate] = useState("");
+  const [estimatingGas, setEstimatingGas] = useState(false);
+
+  const parsedDurationHours = Number(durationHours.trim());
+  const unlockAt = useMemo(() => {
+    if (Number.isNaN(parsedDurationHours) || parsedDurationHours <= 0) {
+      return null;
+    }
+
+    return new Date(Date.now() + parsedDurationHours * 3600 * 1000);
+  }, [parsedDurationHours]);
+
+  useEffect(() => {
+    const trimmedRecipient = recipient.trim();
+    const trimmedAmount = amount.trim();
+
+    if (
+      disabled ||
+      !trimmedRecipient ||
+      !trimmedAmount ||
+      !isAddress(trimmedRecipient) ||
+      Number.isNaN(Number(trimmedAmount)) ||
+      Number(trimmedAmount) <= 0 ||
+      Number.isNaN(parsedDurationHours) ||
+      parsedDurationHours <= 0
+    ) {
+      setGasEstimate("");
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setEstimatingGas(true);
+
+      try {
+        const estimate = await estimateCreatePaymentGas(
+          trimmedRecipient,
+          Math.floor(parsedDurationHours * 3600),
+          trimmedAmount,
+        );
+        setGasEstimate(estimate.feeCelo);
+      } catch {
+        setGasEstimate("");
+      } finally {
+        setEstimatingGas(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [amount, disabled, parsedDurationHours, recipient]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -35,7 +85,6 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
     const trimmedRecipient = recipient.trim();
     const trimmedAmount = amount.trim();
     const parsedAmount = Number(trimmedAmount);
-    const parsedDurationHours = Number(durationHours.trim());
 
     if (!trimmedRecipient) {
       const message = "Recipient address is required.";
@@ -59,7 +108,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
     }
 
     if (!durationHours.trim() || Number.isNaN(parsedDurationHours) || parsedDurationHours <= 0) {
-      const message = "Enter a deadline duration greater than 0 hours.";
+      const message = "Enter a lock duration greater than 0 hours.";
       setFeedback({ type: "error", text: message });
       toast.error("Payment failed", { description: message });
       return;
@@ -84,6 +133,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       setRecipient("");
       setAmount("");
       setDurationHours("24");
+      setGasEstimate("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create the payment right now. Please try again.";
       setFeedback({ type: "error", text: message });
@@ -98,43 +148,70 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       <div className="offlinepay-section-heading">
         <p className="offlinepay-eyebrow">Lock payment</p>
         <h2>Create a time-locked payment</h2>
-        <p>Lock real CELO in the contract, give the recipient a deadline, and let MetaMask handle signing.</p>
+        <p>Lock real CELO in the contract, set the unlock window, and settle later on Celo Mainnet.</p>
       </div>
 
       <div className="offlinepay-form-grid">
-        <Input
-          id="celo-recipient"
-          label="Recipient wallet address"
-          type="text"
-          placeholder="0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
-          value={recipient}
-          onChange={(event) => setRecipient(event.target.value)}
-          hint="Use a valid wallet address on Celo Alfajores."
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <Input
-          id="celo-amount"
-          label="Amount (CELO)"
-          type="number"
-          min="0"
-          step="0.0001"
-          placeholder="0.1"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          hint="This CELO amount will be locked in the contract until accepted or refunded."
-        />
-        <Input
-          id="celo-duration"
-          label="Deadline (hours)"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="24"
-          value={durationHours}
-          onChange={(event) => setDurationHours(event.target.value)}
-          hint="The recipient must accept before this deadline or the sender can reclaim the funds."
-        />
+        <label className="offlinepay-input-group" htmlFor="celo-recipient">
+          <span className="offlinepay-input-group__label">Recipient wallet address</span>
+          <Input
+            id="celo-recipient"
+            type="text"
+            placeholder="0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+            value={recipient}
+            onChange={(event) => setRecipient(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className="offlinepay-input"
+          />
+          <span className="offlinepay-input-group__hint">Use a valid destination address on Celo Mainnet.</span>
+        </label>
+        <label className="offlinepay-input-group" htmlFor="celo-amount">
+          <span className="offlinepay-input-group__label">Locked amount (CELO)</span>
+          <Input
+            id="celo-amount"
+            type="number"
+            min="0"
+            step="0.0001"
+            placeholder="0.1"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className="offlinepay-input"
+          />
+          <span className="offlinepay-input-group__hint">
+            This CELO amount stays locked until the countdown finishes and the recipient withdraws it.
+          </span>
+        </label>
+        <label className="offlinepay-input-group" htmlFor="celo-duration">
+          <span className="offlinepay-input-group__label">Lock duration (hours)</span>
+          <Input
+            id="celo-duration"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="24"
+            value={durationHours}
+            onChange={(event) => setDurationHours(event.target.value)}
+            className="offlinepay-input"
+          />
+          <span className="offlinepay-input-group__hint">
+            Funds remain inaccessible until this lock period has fully expired.
+          </span>
+        </label>
+      </div>
+
+      <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        <div className="flex items-center gap-2 font-medium text-slate-900">
+          <TimerReset size={16} className="text-emerald-600" />
+          Settlement preview
+        </div>
+        <p className="mt-2">Locked amount: {amount || "0"} CELO</p>
+        <p className="mt-1">Recipient: {recipient || "Waiting for recipient address"}</p>
+        <p className="mt-1">Unlock time: {unlockAt ? unlockAt.toLocaleString() : "Set a valid lock duration"}</p>
+        <p className="mt-3 flex items-center gap-2 text-slate-600">
+          {estimatingGas ? <Loader2 size={14} className="animate-spin" /> : null}
+          Estimated gas fee: {gasEstimate ? `${gasEstimate} CELO` : "Connect wallet and complete the form to estimate"}
+        </p>
       </div>
 
       {feedback ? (
@@ -146,7 +223,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
         </div>
       ) : null}
 
-      <Button type="submit" disabled={disabled || loading} fullWidth>
+      <Button type="submit" disabled={disabled || loading} className="w-full">
         {loading ? "Locking..." : "Create Time-Locked Payment"}
       </Button>
     </form>

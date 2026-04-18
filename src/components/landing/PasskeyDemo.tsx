@@ -131,7 +131,7 @@ const PasskeyDemo = () => {
                       <h3 className="font-display text-xl font-semibold text-card-foreground mb-1">Confirm Payment</h3>
                       <p className="text-sm text-muted-foreground mb-4">Authorize with biometrics to send:</p>
                       <div className="bg-muted rounded-xl p-4 mb-6">
-                        <p className="font-display text-2xl font-bold text-foreground">25.00 cUSD</p>
+                        <p className="font-display text-2xl font-bold text-foreground">25.00 CELO</p>
                         <p className="text-xs text-muted-foreground mt-1">To: 0x1a2b…9f3c</p>
                       </div>
                       <Button onClick={handleAuth} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold w-full h-12 rounded-xl gap-2">
@@ -177,7 +177,7 @@ const PasskeyDemo = () => {
                   <p className="text-sm text-muted-foreground mt-2">
                     {mode === "login"
                       ? "You're securely logged into zyxolat OfflinePay."
-                      : "25.00 cUSD queued for blockchain sync."}
+                      : "25.00 CELO queued for blockchain sync."}
                   </p>
                 </motion.div>
               )}

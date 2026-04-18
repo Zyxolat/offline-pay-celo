@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   Copy,
-  Download,
   HelpCircle,
   Loader2,
   Mail,
@@ -23,51 +22,45 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
-import { walletAPI } from '@/services/apiClient';
 import { ReceivePayment } from '@/components/offline/ReceivePayment';
 import {
   buildWalletShareLink,
   buildWalletShareText,
   copyTextToClipboard,
-  downloadDataUrl,
   formatWalletAddress,
 } from '@/lib/wallet';
+import { useTimeLockPayments } from '@/hooks/useTimeLockPayments';
 
 export const ReceivePage = () => {
   const navigate = useNavigate();
-  const [address, setAddress] = useState('');
-  const [qrCode, setQrCode] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { account, connectWallet, connecting } = useTimeLockPayments();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
 
   useEffect(() => {
-    loadWalletAddress();
-  }, []);
+    setCopyFeedback('');
+  }, [account]);
 
-  const shareText = useMemo(() => buildWalletShareText(address), [address]);
-  const shareLink = useMemo(() => buildWalletShareLink(address), [address]);
+  const shareText = useMemo(() => buildWalletShareText(account), [account]);
+  const shareLink = useMemo(() => buildWalletShareLink(account), [account]);
   const whatsappLink = useMemo(() => `https://wa.me/?text=${encodeURIComponent(shareText)}`, [shareText]);
   const mailtoLink = useMemo(
     () => `mailto:?subject=${encodeURIComponent('My OfflinePay wallet address')}&body=${encodeURIComponent(`${shareText}\n${shareLink}`)}`,
     [shareLink, shareText],
   );
 
-  const loadWalletAddress = async () => {
-    try {
-      const res = await walletAPI.getAddress();
-      setAddress(res.data.data.address);
-      setQrCode(res.data.data.qrCode);
-    } catch (error: any) {
-      toast.error(error?.message || 'Error loading wallet address.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCopy = async () => {
+    if (!account) {
+      try {
+        await connectWallet();
+      } catch (error: any) {
+        toast.error(error?.message || 'Connect your wallet to continue.');
+        return;
+      }
+    }
+
     try {
-      await copyTextToClipboard(address);
+      await copyTextToClipboard(account);
       setCopyFeedback('Address copied!');
       toast.success('Address copied!');
     } catch (error: any) {
@@ -76,7 +69,7 @@ export const ReceivePage = () => {
   };
 
   const handleShare = async () => {
-    if (!address) {
+    if (!account) {
       return;
     }
 
@@ -107,15 +100,6 @@ export const ReceivePage = () => {
     }
   };
 
-  const handleDownloadQr = () => {
-    try {
-      downloadDataUrl(qrCode, 'offlinepay-wallet-qr.png');
-      toast.success('QR code download started.');
-    } catch (error: any) {
-      toast.error(error?.message || 'Unable to download QR code.');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_50%,_#f8fafc_100%)] pb-20">
       <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
@@ -129,110 +113,108 @@ export const ReceivePage = () => {
       </div>
 
       <div className="container mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        {loading ? (
-          <div className="py-20 text-center">
-            <Loader2 size={40} className="mx-auto animate-spin text-emerald-600" />
+        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-6">
+            <Card className="overflow-hidden border-slate-200 bg-white shadow-xl shadow-slate-200/60">
+              <CardHeader className="bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(30,41,59,0.98))] text-white">
+                <div className="mb-4 inline-flex w-fit rounded-2xl bg-white/10 p-3 text-emerald-200">
+                  <QrCode size={22} />
+                </div>
+                <CardTitle className="text-3xl">Share your wallet address</CardTitle>
+                <CardDescription className="max-w-2xl text-slate-200">
+                  Receive CELO by sharing your public Celo Mainnet wallet address with payers or merchants.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5 p-6">
+                <div className="flex justify-center">
+                  <div className="flex h-56 w-56 flex-col items-center justify-center rounded-[2rem] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_38%),linear-gradient(135deg,_#f8fafc,_#e2e8f0)] p-6 text-center shadow-inner">
+                    <QrCode size={56} className="text-emerald-600" />
+                    <p className="mt-4 text-sm font-medium text-slate-900">Connect your wallet to share your receiving address.</p>
+                    <p className="mt-2 text-xs text-slate-500">OfflinePay uses the connected Celo Mainnet wallet as the recipient destination.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Your wallet address</p>
+                  <p className="mt-3 break-all font-mono text-sm text-slate-900">{account || 'Connect your wallet to reveal your receiving address.'}</p>
+                  <p className="mt-2 text-xs text-slate-500">Short view: {account ? formatWalletAddress(account) : 'Unavailable until wallet connect'}</p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Button onClick={() => void connectWallet()} className="h-12 rounded-xl bg-slate-950 text-white hover:bg-slate-800">
+                    {connecting ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
+                    {account ? 'Wallet Connected' : 'Connect Wallet'}
+                  </Button>
+                  <Button onClick={handleCopy} variant="outline" className="h-12 rounded-xl border-slate-200">
+                    <Copy size={16} />
+                    Copy Address
+                  </Button>
+                  <Button onClick={handleShare} variant="outline" className="h-12 rounded-xl border-slate-200 sm:col-span-2">
+                    <Share2 size={16} />
+                    Share Address
+                  </Button>
+                </div>
+
+                {copyFeedback && (
+                  <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <CheckCircle2 size={18} />
+                    <span>{copyFeedback}</span>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+                  Share this connected wallet address with anyone sending CELO on Celo Mainnet or settling an OfflinePay time-locked transfer.
+                </div>
+              </CardContent>
+            </Card>
+
+            <ReceivePayment />
           </div>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="space-y-6">
-              <Card className="overflow-hidden border-slate-200 bg-white shadow-xl shadow-slate-200/60">
-                <CardHeader className="bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(30,41,59,0.98))] text-white">
-                  <div className="mb-4 inline-flex w-fit rounded-2xl bg-white/10 p-3 text-emerald-200">
-                    <QrCode size={22} />
-                  </div>
-                  <CardTitle className="text-3xl">Share your wallet address</CardTitle>
-                  <CardDescription className="max-w-2xl text-slate-200">
-                    Receive CELO or cUSD by sharing your public blockchain address or the QR code below.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5 p-6">
-                  {qrCode && (
-                    <div className="flex justify-center">
-                      <div className="rounded-[2rem] border border-slate-200 bg-slate-50 p-5 shadow-inner">
-                        <img src={qrCode} alt="Wallet QR Code" className="h-56 w-56 rounded-2xl bg-white p-3" />
-                      </div>
-                    </div>
-                  )}
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Your wallet address</p>
-                    <p className="mt-3 break-all font-mono text-sm text-slate-900">{address}</p>
-                    <p className="mt-2 text-xs text-slate-500">Short view: {formatWalletAddress(address)}</p>
-                  </div>
+          <div className="space-y-6">
+            <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3 text-slate-950">
+                  <HelpCircle className="text-emerald-600" size={20} />
+                  How your wallet address works
+                </CardTitle>
+                <CardDescription>
+                  A quick guide for sharing your public wallet safely.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm text-slate-700">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  Each user has a unique blockchain address used to send and receive crypto.
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  It works like a public bank account number: safe to share for incoming payments, but never for wallet recovery phrases.
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                  OfflinePay time-locked settlements release CELO directly to the connected recipient wallet only after the timer expires.
+                </div>
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+                  Sending on the wrong network can result in loss, so always confirm the sender is using Celo Mainnet.
+                </div>
+              </CardContent>
+            </Card>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Button onClick={handleCopy} className="h-12 rounded-xl bg-slate-950 text-white hover:bg-slate-800">
-                      <Copy size={16} />
-                      Copy Address
-                    </Button>
-                    <Button onClick={handleShare} variant="outline" className="h-12 rounded-xl border-slate-200">
-                      <Share2 size={16} />
-                      Share Address / QR Code
-                    </Button>
-                  </div>
-
-                  {copyFeedback && (
-                    <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                      <CheckCircle2 size={18} />
-                      <span>{copyFeedback}</span>
-                    </div>
-                  )}
-
-                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-                    Share this address or QR code with anyone sending funds on the Celo network.
-                  </div>
-                </CardContent>
-              </Card>
-
-              <ReceivePayment />
-            </div>
-
-            <div className="space-y-6">
-              <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3 text-slate-950">
-                    <HelpCircle className="text-emerald-600" size={20} />
-                    How your wallet address works
-                  </CardTitle>
-                  <CardDescription>
-                    A quick guide for sharing your public wallet safely.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm text-slate-700">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    Each user has a unique blockchain address used to send and receive crypto.
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    It works like a public bank account number: safe to share for incoming payments, but not secret keys.
-                  </div>
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-                    The same address can receive both CELO and cUSD.
-                  </div>
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
-                    Sending on the wrong network or with the wrong token setup can result in loss, so always confirm the network first.
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/50">
-                <CardHeader>
-                  <CardTitle className="text-slate-950">Why this matters offline</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-slate-700">
-                  <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <Smartphone size={18} className="mt-0.5 text-emerald-600" />
-                    <p>You can still exchange wallet details locally even when mobile data is weak or unavailable.</p>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <Network size={18} className="mt-0.5 text-sky-600" />
-                    <p>OfflinePay captures payment intent first, then syncs with the blockchain once connectivity returns.</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/50">
+              <CardHeader>
+                <CardTitle className="text-slate-950">Why this matters offline</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-700">
+                <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <Smartphone size={18} className="mt-0.5 text-emerald-600" />
+                  <p>You can still exchange wallet details locally even when mobile data is weak or unavailable.</p>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <Network size={18} className="mt-0.5 text-sky-600" />
+                  <p>OfflinePay captures payment intent first, then syncs with the blockchain once connectivity returns.</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        )}
+        </div>
       </div>
 
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
@@ -240,7 +222,7 @@ export const ReceivePage = () => {
           <DialogHeader>
             <DialogTitle>Share wallet address</DialogTitle>
             <DialogDescription>
-              Native share is not available here, so you can copy the link, download the QR code, or use the manual options below.
+              Native share is not available here, so you can copy the link or use the manual options below.
             </DialogDescription>
           </DialogHeader>
 
@@ -255,9 +237,9 @@ export const ReceivePage = () => {
                 <Copy size={16} />
                 Copy link
               </Button>
-              <Button onClick={handleDownloadQr} variant="outline" className="h-11 rounded-xl border-slate-200">
-                <Download size={16} />
-                Download QR
+              <Button onClick={handleCopy} variant="outline" className="h-11 rounded-xl border-slate-200">
+                <QrCode size={16} />
+                Copy address
               </Button>
             </div>
 

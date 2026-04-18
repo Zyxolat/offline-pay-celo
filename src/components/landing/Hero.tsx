@@ -71,7 +71,7 @@ const Hero = () => {
 
             <div className="hero-flow__wallet">
               <div className="hero-flow__wallet-title">Wallet balance</div>
-              <div className="hero-flow__wallet-balance">2,450.00 cUSD</div>
+              <div className="hero-flow__wallet-balance">184.35 CELO</div>
               <div className="hero-flow__wallet-copy">0x91AC...B72c is connected and prepared for queued sends.</div>
             </div>
 

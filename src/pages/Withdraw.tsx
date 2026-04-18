@@ -6,55 +6,54 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/sonner';
-import { walletAPI } from '@/services/apiClient';
-import { getMinimumAmount, getMinimumAmountError, type SupportedToken, SUPPORTED_TOKENS } from '@/lib/wallet';
-
-interface WalletBalance {
-  cUSD: string;
-  CELO: string;
-  address: string;
-  lastSync: string;
-}
+import { getMinimumAmount, getMinimumAmountError } from '@/lib/wallet';
+import { useTimeLockPayments } from '@/hooks/useTimeLockPayments';
+import { estimateSendCeloGas, sendCelo } from '@/utils/sendCelo';
 
 interface WithdrawResult {
-  transactionId: string;
   txHash: string;
   sourceAddress: string;
   destinationAddress: string;
-  token: SupportedToken;
   amount: string;
-  status: string;
 }
 
 export const WithdrawPage = () => {
   const navigate = useNavigate();
-  const [balance, setBalance] = useState<WalletBalance | null>(null);
+  const { account, walletBalance, connectWallet, connecting } = useTimeLockPayments();
   const [destinationAddress, setDestinationAddress] = useState('');
-  const [token, setToken] = useState<SupportedToken>('CELO');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingBalance, setLoadingBalance] = useState(true);
+  const [estimatingGas, setEstimatingGas] = useState(false);
+  const [gasEstimate, setGasEstimate] = useState('');
   const [withdrawalResult, setWithdrawalResult] = useState<WithdrawResult | null>(null);
 
   useEffect(() => {
-    const loadBalance = async () => {
+    if (!account || !destinationAddress || !amount || !ethers.isAddress(destinationAddress) || Number(amount) <= 0) {
+      setGasEstimate('');
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setEstimatingGas(true);
+
       try {
-        const response = await walletAPI.getBalance();
-        setBalance(response.data.data);
-      } catch (error: any) {
-        toast.error(error?.message || 'Failed to load wallet balance.');
+        const estimate = await estimateSendCeloGas(destinationAddress, amount);
+        setGasEstimate(estimate.feeCelo);
+      } catch {
+        setGasEstimate('');
       } finally {
-        setLoadingBalance(false);
+        setEstimatingGas(false);
       }
-    };
+    }, 350);
 
-    loadBalance();
-  }, []);
+    return () => window.clearTimeout(timeoutId);
+  }, [account, amount, destinationAddress]);
 
-  const minimumAmountError = useMemo(() => getMinimumAmountError(amount, token), [amount, token]);
+  const minimumAmountError = useMemo(() => getMinimumAmountError(amount, 'CELO'), [amount]);
   const amountNumber = Number(amount);
 
   const submitDisabled =
+    !account ||
     loading ||
     !destinationAddress ||
     !amount ||
@@ -63,6 +62,15 @@ export const WithdrawPage = () => {
     amountNumber <= 0;
 
   const handleWithdraw = async () => {
+    if (!account) {
+      try {
+        await connectWallet();
+      } catch (error: any) {
+        toast.error(error?.message || 'Connect your wallet to continue.');
+        return;
+      }
+    }
+
     if (!ethers.isAddress(destinationAddress)) {
       toast.error('Enter a valid destination wallet address.');
       return;
@@ -77,9 +85,14 @@ export const WithdrawPage = () => {
     setWithdrawalResult(null);
 
     try {
-      const response = await walletAPI.withdraw(destinationAddress, token, amount);
-      setWithdrawalResult(response.data.data);
-      toast.success(`${amount} ${token} withdrawal submitted.`);
+      const response = await sendCelo(destinationAddress, amount);
+      setWithdrawalResult({
+        txHash: response.hash,
+        sourceAddress: account,
+        destinationAddress,
+        amount,
+      });
+      toast.success(`${amount} CELO withdrawal submitted.`);
       setAmount('');
       setDestinationAddress('');
     } catch (error: any) {
@@ -109,7 +122,7 @@ export const WithdrawPage = () => {
             </div>
             <CardTitle className="text-3xl">Move funds to an external wallet</CardTitle>
             <CardDescription className="max-w-2xl text-slate-200">
-              Withdraw CELO or cUSD to exchanges like MEXC, Bitget, Binance, or any compatible external wallet address.
+              Withdraw CELO to exchanges like Binance, OKX, Coinbase, or any compatible external Celo wallet address.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6 p-6">
@@ -117,19 +130,14 @@ export const WithdrawPage = () => {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Wallet address</p>
                 <p className="mt-2 break-all font-mono text-sm text-slate-900">
-                  {loadingBalance ? 'Loading...' : balance?.address || 'Unavailable'}
+                  {connecting ? 'Connecting...' : account || 'Connect your Celo Mainnet wallet'}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Available balance</p>
-                {loadingBalance ? (
-                  <p className="mt-2 text-sm text-slate-600">Loading balances...</p>
-                ) : (
-                  <div className="mt-2 space-y-1 text-sm text-slate-900">
-                    <p>{balance?.CELO || '0'} CELO</p>
-                    <p>{balance?.cUSD || '0'} cUSD</p>
-                  </div>
-                )}
+                <p className="text-xs uppercase tracking-[0.24em] text-black">Available balance</p>
+                <div className="mt-2 space-y-1 text-sm text-slate-900">
+                  <p>{walletBalance || '0'} CELO</p>
+                </div>
               </div>
             </div>
 
@@ -144,34 +152,17 @@ export const WithdrawPage = () => {
               <p className="text-xs text-slate-500">Use the exact address provided by your exchange or external wallet.</p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-800">Token</label>
-                <select
-                  value={token}
-                  onChange={(event) => setToken(event.target.value as SupportedToken)}
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900"
-                >
-                  {SUPPORTED_TOKENS.map((supportedToken) => (
-                    <option key={supportedToken} value={supportedToken}>
-                      {supportedToken}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-800">Amount</label>
-                <Input
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  type="number"
-                  min="0"
-                  step="0.0001"
-                  placeholder={`Minimum ${getMinimumAmount(token)}`}
-                  className="h-12 rounded-xl border-slate-200 bg-slate-50"
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-800">Amount</label>
+              <Input
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                type="number"
+                min="0"
+                step="0.0001"
+                placeholder={`Minimum ${getMinimumAmount('CELO')}`}
+                className="h-12 rounded-xl border-slate-200 bg-slate-50"
+              />
             </div>
 
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -179,10 +170,20 @@ export const WithdrawPage = () => {
                 <Landmark size={16} />
                 Important
               </div>
-              <p>Minimum {token} withdrawal is {getMinimumAmount(token)} {token}. Double-check the destination network before submitting.</p>
+              <p>Minimum CELO withdrawal is {getMinimumAmount('CELO')} CELO. Confirm the destination deposit address supports the Celo network before submitting.</p>
             </div>
 
             {minimumAmountError && <p className="text-sm text-red-600">{minimumAmountError}</p>}
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">Transfer summary</p>
+              <p className="mt-2">Destination: {destinationAddress || 'Waiting for destination address'}</p>
+              <p className="mt-1">Amount: {amount || '0'} CELO</p>
+              <p className="mt-1 flex items-center gap-2">
+                {estimatingGas ? <Loader2 size={14} className="animate-spin" /> : null}
+                Estimated gas fee: {gasEstimate ? `${gasEstimate} CELO` : 'Enter a valid address and amount to estimate'}
+              </p>
+            </div>
 
             <Button
               onClick={handleWithdraw}
@@ -190,7 +191,7 @@ export const WithdrawPage = () => {
               className="h-12 w-full rounded-xl bg-slate-950 text-white hover:bg-slate-800"
             >
               {loading ? <Loader2 className="animate-spin" /> : <ArrowUpRight />}
-              Withdraw {token}
+              Withdraw CELO
             </Button>
           </CardContent>
         </Card>
@@ -204,7 +205,7 @@ export const WithdrawPage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-emerald-950">
-              <p><span className="font-semibold">Amount:</span> {withdrawalResult.amount} {withdrawalResult.token}</p>
+              <p><span className="font-semibold">Amount:</span> {withdrawalResult.amount} CELO</p>
               <p><span className="font-semibold">Destination:</span> {withdrawalResult.destinationAddress}</p>
               <p><span className="font-semibold">Tx hash:</span> {withdrawalResult.txHash}</p>
             </CardContent>

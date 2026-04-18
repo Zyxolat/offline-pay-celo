@@ -23,6 +23,7 @@ import { ScanPage } from "./pages/Scan.tsx";
 import { AdminDashboard } from "./pages/AdminDashboard.tsx";
 import LearnMorePage from "./pages/LearnMore.tsx";
 import WithdrawPage from "./pages/Withdraw.tsx";
+import { CeloProvider } from "./providers/CeloProvider";
 
 const queryClient = new QueryClient();
 
@@ -148,13 +149,15 @@ const AppContent = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </TooltipProvider>
+      <CeloProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </TooltipProvider>
+      </CeloProvider>
     </QueryClientProvider>
   );
 };

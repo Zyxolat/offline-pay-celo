@@ -71,7 +71,7 @@ export async function copyTextToClipboard(text: string) {
 }
 
 export function buildWalletShareText(address: string) {
-  return `Send CELO or cUSD to my OfflinePay wallet address: ${address}`;
+  return `Send CELO to my OfflinePay wallet address on Celo Mainnet: ${address}`;
 }
 
 export function buildWalletShareLink(address: string) {

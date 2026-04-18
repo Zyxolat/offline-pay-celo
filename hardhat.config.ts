@@ -14,12 +14,12 @@ const config: HardhatUserConfig = {
       },
     },
   },
-  defaultNetwork: "hardhat",
+  defaultNetwork: "celo",
   networks: {
     celo: {
-       url: "https://few-misty-telescope.celo-mainnet.quiknode.pro/d35e2e9bb1d68c304aeee0cb859970b0b9fe3992",
+      url: "https://forno.celo.org",
       chainId: 42220,
-     accounts: privateKey ? [privateKey] : [],
+      accounts: privateKey ? [privateKey] : [],
     },
   },
 };

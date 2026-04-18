@@ -31,7 +31,7 @@ const useCases = [
 
 const tokenSupport = [
   { label: 'CELO', detail: 'Native network asset for gas and value transfer.' },
-  { label: 'cUSD', detail: 'Stablecoin support for everyday pricing and payments.' },
+  { label: 'Delayed Settlement', detail: 'OfflinePay releases locked CELO only after the timer expires for the intended recipient.' },
 ];
 
 export const LearnMorePage = () => {
@@ -67,7 +67,7 @@ export const LearnMorePage = () => {
               </h1>
               <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
                 OfflinePay is designed for environments where connectivity is fragile. It lets people capture payment intent
-                offline, use time-locked acceptance windows, and settle to Celo when the network becomes available again.
+                offline, use time-locked release timers, and settle to Celo when the network becomes available again.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button size="lg" className="bg-emerald-500 text-white hover:bg-emerald-400" onClick={() => navigate('/auth/signup')}>
@@ -110,7 +110,7 @@ export const LearnMorePage = () => {
                       <Clock3 size={16} />
                       <span className="font-semibold">Time-locked trust</span>
                     </div>
-                    <p>Receivers actively confirm within a time window, or the payment safely returns to the sender.</p>
+                    <p>Receivers can withdraw only after the release timer ends, which prevents premature access.</p>
                   </div>
                   <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
                     <div className="mb-2 flex items-center gap-2 text-amber-200">
@@ -193,15 +193,15 @@ export const LearnMorePage = () => {
             <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Step 1</p>
-                <p className="mt-3 font-semibold text-white">Sender creates a CELO payment with a time window.</p>
+                <p className="mt-3 font-semibold text-white">Sender creates a CELO payment with a release timer.</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Step 2</p>
-                <p className="mt-3 font-semibold text-white">Receiver must actively accept the payment before expiry.</p>
+                <p className="mt-3 font-semibold text-white">Receiver waits until the timer finishes, then withdraws with the intended wallet.</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Step 3</p>
-                <p className="mt-3 font-semibold text-white">If the window closes, the funds return to the sender.</p>
+                <p className="mt-3 font-semibold text-white">The UI unlocks automatically at zero and matches the contract release state.</p>
               </div>
             </CardContent>
           </Card>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
@@ -18,16 +18,10 @@ import WalletCard from '@/components/payments/WalletCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/sonner';
-import { walletAPI, queueAPI, authAPI } from '@/services/apiClient';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { useSyncEngine } from '@/hooks/useSyncEngine';
+import { authAPI } from '@/services/apiClient';
 import { clearSession, getStoredUser } from '@/lib/auth';
-
-interface WalletBalance {
-  cUSD: string;
-  CELO: string;
-  address: string;
-}
+import { formatWalletAddress } from '@/lib/wallet';
+import { useTimeLockPayments } from '@/hooks/useTimeLockPayments';
 
 interface WalletTransaction {
   id: string;
@@ -36,11 +30,6 @@ interface WalletTransaction {
   currency: string;
   status: string;
   timestamp: string;
-  txHash?: string;
-}
-
-interface QueueStatus {
-  pendingCount: number;
 }
 
 interface SessionUser {
@@ -57,7 +46,7 @@ const quickActions = [
   },
   {
     label: 'Receive',
-    description: 'Share your address or QR code',
+    description: 'Share your wallet address',
     icon: Download,
     href: '/receive',
     className: 'bg-white text-slate-950 border border-slate-200 hover:bg-slate-50',
@@ -73,16 +62,33 @@ const quickActions = [
 
 export const Dashboard = () => {
   const navigate = useNavigate();
-  const [balance, setBalance] = useState<WalletBalance | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
-  const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { account, walletBalance, payments, loading, connectWallet, refresh } = useTimeLockPayments();
 
-  useOfflineQueue();
-  useSyncEngine();
+  const recentTransactions = useMemo<WalletTransaction[]>(
+    () =>
+      payments.slice(0, 5).map((payment) => ({
+        id: String(payment.id),
+        recipient: payment.recipient,
+        amount: payment.amount,
+        currency: 'CELO',
+        status: payment.status,
+        timestamp: new Date(payment.deadline * 1000).toISOString(),
+      })),
+    [payments],
+  );
+
+  const totalLocked = useMemo(
+    () => payments.filter((payment) => payment.status === 'locked' || payment.status === 'ready').reduce((sum, payment) => sum + Number(payment.amount), 0),
+    [payments],
+  );
+
+  const claimableCount = useMemo(
+    () => payments.filter((payment) => payment.canAccept).length,
+    [payments],
+  );
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -100,36 +106,27 @@ export const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    void loadData();
-    const interval = setInterval(() => {
-      void loadData(false);
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadData = async (showRefreshState = false) => {
-    if (showRefreshState) {
-      setRefreshing(true);
+    if (!account) {
+      return;
     }
 
-    try {
-      const [balanceRes, txRes, queueRes] = await Promise.all([
-        walletAPI.getBalance(),
-        walletAPI.getTransactions(5, 0),
-        queueAPI.getPending(),
-      ]);
+    void refresh(account);
+    const interval = window.setInterval(() => {
+      void refresh(account);
+    }, 30000);
 
-      setBalance(balanceRes.data.data);
-      setTransactions(txRes.data.data.transactions);
-      setQueueStatus(queueRes.data.data);
+    return () => window.clearInterval(interval);
+  }, [account, refresh]);
+
+  const loadData = async () => {
+    setRefreshing(true);
+
+    try {
+      const activeAccount = account || await connectWallet();
+      await refresh(activeAccount);
     } catch (error: any) {
-      setBalance({ cUSD: '0', CELO: '0', address: 'Unavailable' });
-      setTransactions([]);
-      setQueueStatus({ pendingCount: 0 });
       toast.error(error?.message || 'Failed to refresh dashboard data.');
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -160,7 +157,7 @@ export const Dashboard = () => {
               {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
               {isOnline ? 'Online' : 'Offline'}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => void loadData(true)}>
+            <Button variant="ghost" size="sm" onClick={() => void loadData()}>
               {refreshing ? <Loader2 className="animate-spin" /> : <RefreshCcw size={16} />}
             </Button>
             <Button size="sm" variant="ghost" onClick={handleLogout}>
@@ -178,26 +175,26 @@ export const Dashboard = () => {
                 <Wallet size={22} />
               </div>
               <WalletCard
-                address={balance?.address}
-                balance={`$${balance?.cUSD || '0'}`}
-                subtitle={loading ? 'Loading wallet balances...' : `≈ ${balance?.CELO || '0'} CELO • ${user?.email || 'Wallet user'}`}
+                address={account || 'Connect your wallet'}
+                balance={`${walletBalance || '0'} CELO`}
+                subtitle={loading ? 'Loading wallet balances...' : `${account ? formatWalletAddress(account, 10, 8) : 'Connect wallet'} • ${user?.email || 'Wallet user'}`}
                 loading={loading}
               />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Pending sync</p>
-                <p className="mt-3 text-3xl font-semibold text-white">{queueStatus?.pendingCount || 0}</p>
-                <p className="mt-2 text-sm text-slate-300">Queued transfers waiting for network settlement.</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Locked in escrow</p>
+                <p className="mt-3 text-3xl font-semibold text-white">{totalLocked.toFixed(4)} CELO</p>
+                <p className="mt-2 text-sm text-slate-300">Active delayed-settlement payments currently held by the contract.</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Security</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Ready to claim</p>
                 <div className="mt-3 flex items-center gap-3 text-white">
                   <ShieldCheck className="text-emerald-300" />
-                  <span className="font-medium">Google + Passkey auth preserved</span>
+                  <span className="font-medium">{claimableCount} incoming payment{claimableCount === 1 ? '' : 's'} available</span>
                 </div>
-                <p className="mt-2 text-sm text-slate-300">Wallet actions stay inside the existing authenticated flow.</p>
+                <p className="mt-2 text-sm text-slate-300">Claimable transfers appear here as soon as the intended recipient wallet is connected.</p>
               </div>
             </div>
           </div>
@@ -223,7 +220,7 @@ export const Dashboard = () => {
           <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/60">
             <CardHeader>
               <CardTitle className="text-slate-950">Recent activity</CardTitle>
-              <CardDescription>Latest wallet transactions and settlement status.</CardDescription>
+              <CardDescription>Latest contract payments and settlement status.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {loading ? (
@@ -231,12 +228,12 @@ export const Dashboard = () => {
                   <Loader2 className="animate-spin" />
                   Loading activity...
                 </div>
-              ) : transactions.length === 0 ? (
+              ) : recentTransactions.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
                   No transactions yet. Use Send, Receive, or Withdraw to start moving funds.
                 </div>
               ) : (
-                transactions.map((transaction) => (
+                recentTransactions.map((transaction) => (
                   <TransactionListItem
                     key={transaction.id}
                     amount={transaction.amount || '0'}
@@ -261,15 +258,15 @@ export const Dashboard = () => {
             <CardContent className="space-y-4 text-sm text-slate-700">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Receive assets</p>
-                <p className="mt-2">One wallet address can receive both CELO and cUSD on the Celo network.</p>
+                <p className="mt-2">Use the same Celo Mainnet wallet to receive direct CELO transfers and OfflinePay settlements.</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Offline capture</p>
-                <p className="mt-2">Payments can be staged locally and synchronized when the device comes back online.</p>
+                <p className="mt-2">OfflinePay captures payment intent in unstable environments, then settles on-chain once connectivity returns.</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Withdrawal ready</p>
-                <p className="mt-2">Move funds to external wallets or exchange deposit addresses from the new withdraw flow.</p>
+                <p className="mt-2">Move funds to external wallets or exchange deposit addresses using the CELO withdrawal flow.</p>
               </div>
             </CardContent>
           </Card>

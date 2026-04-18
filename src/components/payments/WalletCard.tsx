@@ -23,7 +23,7 @@ export const WalletCard = ({
     <section className="wallet-card">
       <div className="wallet-card__top">
         <div>
-          <p className="wallet-card__label">{balanceLabel}</p>
+          <p className="wallet-card__label text-black">{balanceLabel}</p>
         </div>
         <div className="wallet-card__status">
           <span className="wallet-card__status-dot" aria-hidden="true" />
@@ -39,7 +39,7 @@ export const WalletCard = ({
         </div>
       ) : (
         <>
-          <div className="wallet-card__amount">{balance ?? "--"}</div>
+          <div className="wallet-card__amount text-black">{balance ?? "--"}</div>
           {subtitle ? <p className="wallet-card__meta">{subtitle}</p> : null}
           <div className="wallet-card__address">
             <span className="wallet-card__label">Wallet</span>

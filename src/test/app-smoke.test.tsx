@@ -26,8 +26,8 @@ describe("App smoke", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/built on celo blockchain/i)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /crypto payments/i })).toBeInTheDocument();
+    expect(await screen.findByText(/offline payments on celo/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /send payments/i })).toBeInTheDocument();
   });
 
   it("renders the login page without crashing", async () => {

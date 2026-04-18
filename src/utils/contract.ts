@@ -9,20 +9,32 @@ import {
   parseEther,
 } from "ethers";
 
+import {
+  CELO_MAINNET_CHAIN_ID,
+  CELO_MAINNET_CHAIN_ID_BIGINT,
+  CELO_MAINNET_CHAIN_PARAMS,
+  CELO_MAINNET_RPC_URL,
+  OFFLINEPAY_WALLET_CACHE_KEY,
+  type OfflinePayWalletState,
+} from "@/config/celo";
 import { TIMELOCK_ABI, TIMELOCK_CONTRACT_ADDRESS } from "@/contracts/TimeLock";
 
-const ALFAJORES_CHAIN_ID_HEX = "0xaef3";
-const ALFAJORES_CHAIN_ID_DECIMAL = 44787n;
-const ALFAJORES_RPC_URL = import.meta.env.VITE_CELO_ALFAJORES_RPC_URL || "https://alfajores-forno.celo-testnet.org";
-
 const contractInterface = new Interface(TIMELOCK_ABI);
+const readProvider = new JsonRpcProvider(CELO_MAINNET_RPC_URL);
 
 interface ProviderError {
   code?: number | string;
   message?: string;
+  shortMessage?: string;
+  reason?: string;
+  info?: {
+    error?: {
+      message?: string;
+    };
+  };
 }
 
-export type TimeLockPaymentStatus = "pending" | "accepted" | "expired" | "refunded";
+export type TimeLockPaymentStatus = "locked" | "ready" | "accepted" | "refunded";
 
 export interface TimeLockPaymentView {
   id: number;
@@ -49,9 +61,37 @@ export interface ContractActionResult {
   hash: string;
 }
 
+export interface GasEstimate {
+  gasLimit: bigint;
+  gasPrice: bigint;
+  feeWei: bigint;
+  feeCelo: string;
+}
+
+const assertContractConfigured = () => {
+  if (!TIMELOCK_CONTRACT_ADDRESS || !isAddress(TIMELOCK_CONTRACT_ADDRESS)) {
+    throw new Error("OfflinePay contract configuration is invalid.");
+  }
+};
+
+const getRawErrorMessage = (error: unknown): string => {
+  const providerError = error as ProviderError | undefined;
+  if (!providerError) {
+    return "";
+  }
+
+  return (
+    providerError.reason ||
+    providerError.shortMessage ||
+    providerError.info?.error?.message ||
+    providerError.message ||
+    ""
+  );
+};
+
 const getFriendlyErrorMessage = (error: unknown) => {
   const providerError = error as ProviderError | undefined;
-  const message = providerError?.message?.toLowerCase() ?? "";
+  const message = getRawErrorMessage(error).toLowerCase();
 
   if (providerError?.code === 4001 || message.includes("user rejected")) {
     return "Transaction was cancelled in MetaMask.";
@@ -61,20 +101,20 @@ const getFriendlyErrorMessage = (error: unknown) => {
     return "Insufficient funds to cover the locked CELO amount and gas fees.";
   }
 
-  if (message.includes("wrong network") || message.includes("switch")) {
-    return "Please switch MetaMask to Celo Alfajores.";
+  if (message.includes("wrong network") || message.includes("chain") || message.includes("switch")) {
+    return "Switch your wallet to Celo Mainnet to continue.";
   }
 
   if (message.includes("invalid address") || message.includes("ens")) {
     return "Enter a valid Celo wallet address.";
   }
 
-  if (message.includes("payment deadline passed")) {
-    return "This payment expired before it could be accepted.";
+  if (message.includes("payment is still locked")) {
+    return "This payment is still locked. Wait for the timer to reach zero.";
   }
 
-  if (message.includes("payment is still active")) {
-    return "This payment has not expired yet, so it cannot be refunded.";
+  if (message.includes("payment already unlocked")) {
+    return "This payment is already unlocked, so the sender can no longer cancel it.";
   }
 
   if (message.includes("only recipient can accept")) {
@@ -82,43 +122,101 @@ const getFriendlyErrorMessage = (error: unknown) => {
   }
 
   if (message.includes("only sender can refund")) {
-    return "Only the sender can reclaim this expired payment.";
+    return "Only the original sender can cancel this payment while it is still locked.";
   }
 
-  if (providerError?.message) {
-    return providerError.message;
+  if (message.includes("call exception")) {
+    return "The contract rejected this request. Double-check the recipient, amount, and unlock time.";
   }
 
-  return "Something went wrong while talking to the contract.";
-};
-
-const assertContractConfigured = () => {
-  if (!TIMELOCK_CONTRACT_ADDRESS || !isAddress(TIMELOCK_CONTRACT_ADDRESS)) {
-    throw new Error("Set VITE_TIMELOCK_CONTRACT_ADDRESS to your deployed TimeLockPayments contract.");
+  if (providerError?.message || providerError?.shortMessage || providerError?.reason) {
+    return getRawErrorMessage(error);
   }
+
+  return "Something went wrong while talking to the OfflinePay contract.";
 };
 
 const getEthereumProvider = () => {
   if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("MetaMask is not available. Install it and try again.");
+    throw new Error("MetaMask or another injected wallet is required.");
   }
 
   return window.ethereum;
 };
 
-export const ensureAlfajoresNetwork = async () => {
-  const ethereum = getEthereumProvider();
-  const provider = new BrowserProvider(ethereum);
-  const network = await provider.getNetwork();
-
-  if (network.chainId === ALFAJORES_CHAIN_ID_DECIMAL) {
-    return provider;
+const saveWalletState = (state: OfflinePayWalletState) => {
+  if (typeof window === "undefined") {
+    return;
   }
+
+  sessionStorage.setItem(OFFLINEPAY_WALLET_CACHE_KEY, JSON.stringify(state));
+};
+
+const getCachedWalletState = (): OfflinePayWalletState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = sessionStorage.getItem(OFFLINEPAY_WALLET_CACHE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as OfflinePayWalletState;
+  } catch {
+    return null;
+  }
+};
+
+export const readWalletState = async (force = false): Promise<OfflinePayWalletState> => {
+  const cached = getCachedWalletState();
+
+  if (cached && !force) {
+    return cached;
+  }
+
+  if (typeof window === "undefined" || !window.ethereum) {
+    const emptyState = {
+      address: "",
+      chainId: null,
+      isConnected: false,
+      isWrongNetwork: false,
+      walletAvailable: false,
+    };
+
+    saveWalletState(emptyState);
+    return emptyState;
+  }
+
+  const ethereum = getEthereumProvider();
+  const [chainIdHex, accounts] = await Promise.all([
+    ethereum.request({ method: "eth_chainId" }),
+    ethereum.request({ method: "eth_accounts" }),
+  ]);
+
+  const chainId = typeof chainIdHex === "string" ? parseInt(chainIdHex, 16) : null;
+  const firstAccount = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
+
+  const state = {
+    address: firstAccount ? getAddress(firstAccount) : "",
+    chainId,
+    isConnected: Boolean(firstAccount),
+    isWrongNetwork: chainId !== null && chainId !== CELO_MAINNET_CHAIN_ID,
+    walletAvailable: true,
+  };
+
+  saveWalletState(state);
+  return state;
+};
+
+export const switchToCeloMainnet = async () => {
+  const ethereum = getEthereumProvider();
 
   try {
     await ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: ALFAJORES_CHAIN_ID_HEX }],
+      params: [{ chainId: CELO_MAINNET_CHAIN_PARAMS.chainId }],
     });
   } catch (error) {
     const providerError = error as ProviderError;
@@ -126,63 +224,76 @@ export const ensureAlfajoresNetwork = async () => {
     if (providerError.code === 4902) {
       await ethereum.request({
         method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: ALFAJORES_CHAIN_ID_HEX,
-            chainName: "Celo Alfajores Testnet",
-            nativeCurrency: {
-              name: "CELO",
-              symbol: "CELO",
-              decimals: 18,
-            },
-            rpcUrls: [ALFAJORES_RPC_URL],
-            blockExplorerUrls: ["https://alfajores.celoscan.io"],
-          },
-        ],
+        params: [CELO_MAINNET_CHAIN_PARAMS],
       });
-    } else {
-      throw new Error("Please switch MetaMask to the Celo Alfajores Testnet.");
+      return;
     }
+
+    throw new Error("Automatic switching failed. Please switch your wallet to Celo Mainnet manually.");
+  }
+};
+
+export const ensureCeloMainnet = async () => {
+  const ethereum = getEthereumProvider();
+  const provider = new BrowserProvider(ethereum);
+  const network = await provider.getNetwork();
+
+  if (network.chainId !== CELO_MAINNET_CHAIN_ID_BIGINT) {
+    await switchToCeloMainnet();
   }
 
   return new BrowserProvider(ethereum);
 };
 
 export const connectWallet = async () => {
-  const provider = await ensureAlfajoresNetwork();
+  const provider = await ensureCeloMainnet();
   await provider.send("eth_requestAccounts", []);
 
   const signer = await provider.getSigner();
   const address = await signer.getAddress();
+  const network = await provider.getNetwork();
 
-  return {
+  const result = {
     provider,
     signer,
     address: getAddress(address),
+    chainId: Number(network.chainId),
   };
+
+  saveWalletState({
+    address: result.address,
+    chainId: result.chainId,
+    isConnected: true,
+    isWrongNetwork: result.chainId !== CELO_MAINNET_CHAIN_ID,
+    walletAvailable: true,
+  });
+
+  return result;
 };
 
 export const getConnectedWalletAddress = async () => {
-  if (typeof window === "undefined" || !window.ethereum) {
-    return "";
-  }
-
-  const accounts = await window.ethereum.request({ method: "eth_accounts" });
-  const firstAccount = Array.isArray(accounts) ? accounts[0] : "";
-  if (typeof firstAccount !== "string" || !firstAccount) {
-    return "";
-  }
-
-  return getAddress(firstAccount);
+  const state = await readWalletState();
+  return state.address;
 };
 
-const getReadProvider = () => {
-  return new JsonRpcProvider(ALFAJORES_RPC_URL);
-};
+const getReadProvider = () => readProvider;
 
 const getContract = (runner: BrowserProvider | JsonRpcProvider | Awaited<ReturnType<typeof connectWallet>>["signer"]) => {
   assertContractConfigured();
   return new Contract(TIMELOCK_CONTRACT_ADDRESS, TIMELOCK_ABI, runner);
+};
+
+const buildGasEstimate = async (gasLimit: bigint, provider: BrowserProvider | JsonRpcProvider): Promise<GasEstimate> => {
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
+  const feeWei = gasLimit * gasPrice;
+
+  return {
+    gasLimit,
+    gasPrice,
+    feeWei,
+    feeCelo: formatEther(feeWei),
+  };
 };
 
 const mapPayment = (
@@ -204,15 +315,15 @@ const mapPayment = (
   const recipient = getAddress(payment.recipient);
   const isSender = normalizedViewer === sender;
   const isRecipient = normalizedViewer === recipient;
-  const expired = now > deadline;
+  const unlocked = now >= deadline;
 
-  let status: TimeLockPaymentStatus = "pending";
+  let status: TimeLockPaymentStatus = "locked";
   if (payment.refunded) {
     status = "refunded";
   } else if (payment.claimed) {
     status = "accepted";
-  } else if (expired) {
-    status = "expired";
+  } else if (unlocked) {
+    status = "ready";
   }
 
   return {
@@ -227,9 +338,18 @@ const mapPayment = (
     status,
     isSender,
     isRecipient,
-    canAccept: isRecipient && !payment.claimed && !payment.refunded && !expired,
-    canRefund: isSender && !payment.claimed && !payment.refunded && expired,
+    canAccept: isRecipient && !payment.claimed && !payment.refunded && unlocked,
+    canRefund: isSender && !payment.claimed && !payment.refunded && !unlocked,
   };
+};
+
+export const getWalletBalance = async (address: string) => {
+  if (!address || !isAddress(address)) {
+    return "0";
+  }
+
+  const balance = await getReadProvider().getBalance(getAddress(address));
+  return formatEther(balance);
 };
 
 export const getPayment = async (paymentId: number, viewerAddress = ""): Promise<TimeLockPaymentView> => {
@@ -288,27 +408,44 @@ const parsePaymentCreatedEvent = (logs: readonly { topics: readonly string[]; da
   return null;
 };
 
-export const createPayment = async (recipient: string, duration: number, amount: string): Promise<CreatePaymentResult> => {
+const validateCreatePaymentInput = (recipient: string, duration: number, amount: string) => {
   const normalizedRecipient = recipient.trim();
   const normalizedAmount = amount.trim();
+  const parsedAmount = Number(normalizedAmount);
 
   if (!normalizedRecipient || !isAddress(normalizedRecipient)) {
     throw new Error("Enter a valid Celo wallet address.");
   }
 
-  if (!normalizedAmount || Number(normalizedAmount) <= 0) {
-    throw new Error("Enter an amount greater than 0.");
+  if (!normalizedAmount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+    throw new Error("Enter an amount greater than 0 CELO.");
   }
 
   if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error("Enter a deadline duration greater than 0 seconds.");
+    throw new Error("Enter a valid lock duration greater than zero.");
   }
+};
+
+export const estimateCreatePaymentGas = async (recipient: string, duration: number, amount: string) => {
+  validateCreatePaymentInput(recipient, duration, amount);
+
+  const { signer, provider } = await connectWallet();
+  const contract = getContract(signer);
+  const gasLimit = await contract.createPayment.estimateGas(getAddress(recipient.trim()), BigInt(Math.floor(duration)), {
+    value: parseEther(amount.trim()),
+  });
+
+  return buildGasEstimate(gasLimit, provider);
+};
+
+export const createPayment = async (recipient: string, duration: number, amount: string): Promise<CreatePaymentResult> => {
+  validateCreatePaymentInput(recipient, duration, amount);
 
   try {
     const { signer } = await connectWallet();
     const contract = getContract(signer);
-    const tx = await contract.createPayment(getAddress(normalizedRecipient), BigInt(Math.floor(duration)), {
-      value: parseEther(normalizedAmount),
+    const tx = await contract.createPayment(getAddress(recipient.trim()), BigInt(Math.floor(duration)), {
+      value: parseEther(amount.trim()),
     });
     const receipt = await tx.wait();
 
@@ -319,6 +456,16 @@ export const createPayment = async (recipient: string, duration: number, amount:
   } catch (error) {
     throw new Error(getFriendlyErrorMessage(error));
   }
+};
+
+export const estimatePaymentActionGas = async (paymentId: number, action: "accept" | "refund") => {
+  const { signer, provider } = await connectWallet();
+  const contract = getContract(signer);
+  const gasLimit = action === "accept"
+    ? await contract.acceptPayment.estimateGas(paymentId)
+    : await contract.refundPayment.estimateGas(paymentId);
+
+  return buildGasEstimate(gasLimit, provider);
 };
 
 export const acceptPayment = async (paymentId: number): Promise<ContractActionResult> => {
@@ -349,4 +496,18 @@ export const refundPayment = async (paymentId: number): Promise<ContractActionRe
   } catch (error) {
     throw new Error(getFriendlyErrorMessage(error));
   }
+};
+
+export const subscribeToWalletEvents = (listener: () => void) => {
+  if (typeof window === "undefined" || !window.ethereum) {
+    return () => undefined;
+  }
+
+  window.ethereum.on?.("accountsChanged", listener);
+  window.ethereum.on?.("chainChanged", listener);
+
+  return () => {
+    window.ethereum?.removeListener?.("accountsChanged", listener);
+    window.ethereum?.removeListener?.("chainChanged", listener);
+  };
 };

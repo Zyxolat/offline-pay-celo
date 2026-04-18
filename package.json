@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "contracts:compile": "hardhat compile",
-    "contracts:deploy:alfajores": "hardhat run scripts/deployTimeLockPayments.ts --network alfajores"
+    "contracts:deploy:celo": "hardhat run scripts/deployTimeLockPayments.ts --network celo"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -78,7 +78,7 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
-    "dotenv": "^17.2.2",
+    "dotenv": "^17.4.2",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",

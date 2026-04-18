@@ -1,0 +1,41 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/home/zyxolat/Downloads/offline-pay-celo-connect-main/contracts/TimeLockPayments.sol": {
+      "lastModificationDate": 1776506142166,
+      "contentHash": "09a6333e08296127b519d3a118ec56a0",
+      "sourceName": "contracts/TimeLockPayments.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "TimeLockPayments"
+      ]
+    }
+  }
+}
