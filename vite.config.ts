@@ -19,6 +19,47 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (
+            id.includes("/@walletconnect/") ||
+            id.includes("/@reown/")
+          ) {
+            return "walletconnect";
+          }
+
+          if (id.includes("/wagmi/") || id.includes("/viem/")) {
+            return "wagmi";
+          }
+
+          if (id.includes("/ethers/")) {
+            return "ethers";
+          }
+
+          if (id.includes("/framer-motion/")) {
+            return "motion";
+          }
+
+          if (id.includes("/react-router") || id.includes("@remix-run/router")) {
+            return "router";
+          }
+
+          if (id.includes("/@radix-ui/")) {
+            return "radix";
+          }
+
+          return undefined;
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
