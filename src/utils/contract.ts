@@ -8,16 +8,27 @@ import {
   isAddress,
   parseEther,
 } from "ethers";
+import {
+  connect as wagmiConnect,
+  getAccount,
+  switchChain,
+  watchChainId,
+  watchConnection,
+} from "wagmi/actions";
 
 import {
   CELO_MAINNET_CHAIN_ID,
   CELO_MAINNET_CHAIN_ID_BIGINT,
-  CELO_MAINNET_CHAIN_PARAMS,
   CELO_MAINNET_RPC_URL,
   OFFLINEPAY_WALLET_CACHE_KEY,
   type OfflinePayWalletState,
 } from "@/config/celo";
 import { TIMELOCK_ABI, TIMELOCK_CONTRACT_ADDRESS } from "@/contracts/TimeLock";
+import {
+  config as wagmiConfig,
+  getPreferredConnector,
+} from "@/lib/wagmi";
+import { isInjectedAvailable, setLastWalletType } from "@/lib/wallet";
 
 const contractInterface = new Interface(TIMELOCK_ABI);
 const readProvider = new JsonRpcProvider(CELO_MAINNET_RPC_URL);
@@ -94,7 +105,7 @@ const getFriendlyErrorMessage = (error: unknown) => {
   const message = getRawErrorMessage(error).toLowerCase();
 
   if (providerError?.code === 4001 || message.includes("user rejected")) {
-    return "Transaction was cancelled in MetaMask.";
+    return "Transaction was cancelled in your wallet.";
   }
 
   if (message.includes("insufficient funds")) {
@@ -137,11 +148,12 @@ const getFriendlyErrorMessage = (error: unknown) => {
 };
 
 const getEthereumProvider = () => {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("MetaMask or another injected wallet is required.");
+  const { connector } = getAccount(wagmiConfig);
+  if (!connector) {
+    throw new Error("Connect a compatible wallet like MiniPay or MetaMask to continue.");
   }
 
-  return window.ethereum;
+  return connector.getProvider({ chainId: CELO_MAINNET_CHAIN_ID });
 };
 
 const saveWalletState = (state: OfflinePayWalletState) => {
@@ -176,7 +188,9 @@ export const readWalletState = async (force = false): Promise<OfflinePayWalletSt
     return cached;
   }
 
-  if (typeof window === "undefined" || !window.ethereum) {
+  const account = getAccount(wagmiConfig);
+
+  if (typeof window === "undefined") {
     const emptyState = {
       address: "",
       chainId: null,
@@ -189,20 +203,11 @@ export const readWalletState = async (force = false): Promise<OfflinePayWalletSt
     return emptyState;
   }
 
-  const ethereum = getEthereumProvider();
-  const [chainIdHex, accounts] = await Promise.all([
-    ethereum.request({ method: "eth_chainId" }),
-    ethereum.request({ method: "eth_accounts" }),
-  ]);
-
-  const chainId = typeof chainIdHex === "string" ? parseInt(chainIdHex, 16) : null;
-  const firstAccount = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
-
   const state = {
-    address: firstAccount ? getAddress(firstAccount) : "",
-    chainId,
-    isConnected: Boolean(firstAccount),
-    isWrongNetwork: chainId !== null && chainId !== CELO_MAINNET_CHAIN_ID,
+    address: account.address ? getAddress(account.address) : "",
+    chainId: account.chainId ?? null,
+    isConnected: account.isConnected,
+    isWrongNetwork: account.chainId !== undefined && account.chainId !== CELO_MAINNET_CHAIN_ID,
     walletAvailable: true,
   };
 
@@ -211,30 +216,21 @@ export const readWalletState = async (force = false): Promise<OfflinePayWalletSt
 };
 
 export const switchToCeloMainnet = async () => {
-  const ethereum = getEthereumProvider();
-
   try {
-    await ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: CELO_MAINNET_CHAIN_PARAMS.chainId }],
+    await switchChain(wagmiConfig, {
+      chainId: CELO_MAINNET_CHAIN_ID,
     });
   } catch (error) {
     const providerError = error as ProviderError;
 
-    if (providerError.code === 4902) {
-      await ethereum.request({
-        method: "wallet_addEthereumChain",
-        params: [CELO_MAINNET_CHAIN_PARAMS],
-      });
-      return;
-    }
-
-    throw new Error("Automatic switching failed. Please switch your wallet to Celo Mainnet manually.");
+    throw new Error(
+      providerError.message || "Automatic switching failed. Please switch your wallet to Celo Mainnet manually.",
+    );
   }
 };
 
 export const ensureCeloMainnet = async () => {
-  const ethereum = getEthereumProvider();
+  const ethereum = await getEthereumProvider();
   const provider = new BrowserProvider(ethereum);
   const network = await provider.getNetwork();
 
@@ -242,10 +238,27 @@ export const ensureCeloMainnet = async () => {
     await switchToCeloMainnet();
   }
 
-  return new BrowserProvider(ethereum);
+  return new BrowserProvider(await getEthereumProvider());
 };
 
 export const connectWallet = async () => {
+  const account = getAccount(wagmiConfig);
+
+  if (!account.isConnected) {
+    const connector = await getPreferredConnector();
+
+    if (!connector) {
+      throw new Error("No wallet connector is available.");
+    }
+
+    await wagmiConnect(wagmiConfig, {
+      connector,
+      chainId: CELO_MAINNET_CHAIN_ID,
+    });
+
+    setLastWalletType(isInjectedAvailable() ? "injected" : "walletconnect");
+  }
+
   const provider = await ensureCeloMainnet();
   await provider.send("eth_requestAccounts", []);
 
@@ -499,15 +512,19 @@ export const refundPayment = async (paymentId: number): Promise<ContractActionRe
 };
 
 export const subscribeToWalletEvents = (listener: () => void) => {
-  if (typeof window === "undefined" || !window.ethereum) {
+  if (typeof window === "undefined") {
     return () => undefined;
   }
 
-  window.ethereum.on?.("accountsChanged", listener);
-  window.ethereum.on?.("chainChanged", listener);
+  const unwatchConnection = watchConnection(wagmiConfig, {
+    onChange: () => listener(),
+  });
+  const unwatchChain = watchChainId(wagmiConfig, {
+    onChange: () => listener(),
+  });
 
   return () => {
-    window.ethereum?.removeListener?.("accountsChanged", listener);
-    window.ethereum?.removeListener?.("chainChanged", listener);
+    unwatchConnection();
+    unwatchChain();
   };
 };

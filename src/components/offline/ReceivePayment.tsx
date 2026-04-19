@@ -39,7 +39,7 @@ export const ReceivePayment = () => {
       await connectWallet();
       toast.success("Wallet connected to Celo Mainnet.");
     } catch (connectError) {
-      toast.error(connectError instanceof Error ? connectError.message : "Unable to connect MetaMask.");
+      toast.error(connectError instanceof Error ? connectError.message : "Unable to connect your wallet.");
     }
   };
 
@@ -80,7 +80,7 @@ export const ReceivePayment = () => {
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Recipient wallet</p>
           <p className="mt-2 break-all rounded-2xl border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-900">
-            {account || "Connect MetaMask to load your recipient payments."}
+            {account || "Connect your wallet to load your recipient payments."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

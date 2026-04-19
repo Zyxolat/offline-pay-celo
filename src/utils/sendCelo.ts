@@ -17,7 +17,7 @@ const toFriendlyErrorMessage = (error: unknown) => {
   const message = providerError?.message?.toLowerCase() ?? "";
 
   if (providerError?.code === 4001 || message.includes("user rejected")) {
-    return "Transaction was cancelled in MetaMask.";
+    return "Transaction was cancelled in your wallet.";
   }
 
   if (message.includes("invalid address") || message.includes("ens name")) {

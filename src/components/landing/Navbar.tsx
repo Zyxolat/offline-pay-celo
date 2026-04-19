@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+
+const WalletButtonSlot = lazy(() => import("@/components/wallet/WalletButtonSlot"));
+
+const WalletButtonFallback = () => (
+  <div className="inline-flex min-h-10 items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 shadow-sm">
+    Wallet
+  </div>
+);
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -55,6 +63,9 @@ const Navbar = () => {
               {link.label}
             </a>
           ))}
+          <Suspense fallback={<WalletButtonFallback />}>
+            <WalletButtonSlot />
+          </Suspense>
           <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-6" onClick={() => navigate('/auth/signup')}>
             Get Started
           </Button>
@@ -91,6 +102,9 @@ const Navbar = () => {
                   {link.label}
                 </a>
               ))}
+              <Suspense fallback={<WalletButtonFallback />}>
+                <WalletButtonSlot />
+              </Suspense>
               <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold w-full" onClick={() => { navigate('/auth/signup'); setMobileOpen(false); }}>
                 Get Started
               </Button>

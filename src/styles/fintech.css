@@ -433,6 +433,16 @@
   letter-spacing: -0.05em;
 }
 
+.wallet-balance {
+  color: #0f172a;
+  font-size: 1.8rem;
+  font-weight: 800;
+  background: linear-gradient(90deg, #22c55e, #3b82f6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .wallet-card__meta {
   margin-top: 0.5rem;
   color: #475569;

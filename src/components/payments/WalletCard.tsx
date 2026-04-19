@@ -39,7 +39,7 @@ export const WalletCard = ({
         </div>
       ) : (
         <>
-          <div className="wallet-card__amount text-black">{balance ?? "--"}</div>
+          <div className="wallet-card__amount wallet-balance">{balance ?? "--"}</div>
           {subtitle ? <p className="wallet-card__meta">{subtitle}</p> : null}
           <div className="wallet-card__address">
             <span className="wallet-card__label">Wallet</span>

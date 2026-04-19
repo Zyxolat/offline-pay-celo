@@ -80,7 +80,7 @@ export const SendPayment = () => {
       await connectWallet();
       toast.success("Wallet connected to Celo Mainnet.");
     } catch (connectError) {
-      toast.error(connectError instanceof Error ? connectError.message : "Unable to connect MetaMask.");
+      toast.error(connectError instanceof Error ? connectError.message : "Unable to connect your wallet.");
     }
   };
 
@@ -131,7 +131,7 @@ export const SendPayment = () => {
           <div className="flex flex-wrap gap-3">
             <Button onClick={handleConnectWallet} className="rounded-xl bg-white text-slate-950 hover:bg-slate-100" disabled={connecting}>
               <Wallet size={16} />
-              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect MetaMask"}
+              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect Wallet"}
             </Button>
             {isWrongNetwork ? (
               <Button

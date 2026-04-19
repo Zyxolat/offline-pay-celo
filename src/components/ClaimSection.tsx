@@ -25,7 +25,7 @@ export const ClaimSection = ({
       <section className="offlinepay-claim-card offlinepay-empty-state">
         <p className="offlinepay-eyebrow">Payment actions</p>
         <h3>Select a payment</h3>
-        <p>Connect MetaMask, create a payment, then manage recipient acceptance or sender refunds here.</p>
+        <p>Connect your wallet, create a payment, then manage recipient acceptance or sender refunds here.</p>
       </section>
     );
   }

@@ -52,7 +52,7 @@ export const OfflinePaymentDemo = () => {
       await connectWallet();
       toast.success("Wallet connected to Celo Mainnet.");
     } catch (connectError) {
-      const message = connectError instanceof Error ? connectError.message : "Unable to connect MetaMask.";
+      const message = connectError instanceof Error ? connectError.message : "Unable to connect your wallet.";
       toast.error(message);
     }
   };
@@ -86,8 +86,8 @@ export const OfflinePaymentDemo = () => {
             </span>
             <h2>Lock CELO, count down to release, and let the right wallet withdraw only after unlock</h2>
             <p>
-              This version uses MetaMask plus a real Celo smart contract, so the sender never gives up custody beyond the
-              contract rules you define on-chain.
+              This version uses injected wallets like MiniPay or MetaMask plus a real Celo smart contract, so the sender
+              never gives up custody beyond the contract rules you define on-chain.
             </p>
           </div>
 
@@ -95,7 +95,7 @@ export const OfflinePaymentDemo = () => {
             <div className="offlinepay-auth-card__header">
               <div>
                 <p className="offlinepay-eyebrow">Wallet connection</p>
-                <h3>MetaMask on Celo Mainnet</h3>
+                <h3>MiniPay or MetaMask on Celo Mainnet</h3>
               </div>
               {account ? (
                 <span className="offlinepay-status-pill offlinepay-status-pill--claimed">
@@ -113,7 +113,7 @@ export const OfflinePaymentDemo = () => {
 
             <Button onClick={handleConnectWallet} variant={account ? "secondary" : "default"} className="w-full" disabled={connecting}>
               <Wallet size={18} />
-              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect MetaMask"}
+              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect Wallet"}
             </Button>
 
             {error ? <p style={{ marginTop: "0.75rem" }}>{error}</p> : null}
@@ -135,7 +135,7 @@ export const OfflinePaymentDemo = () => {
                 {payments.length === 0 ? (
                   <div className="offlinepay-empty-state">
                     <ShieldCheck size={22} />
-                    <p>No contract payments yet. Connect MetaMask, lock CELO, and the recipient will be able to withdraw after unlock.</p>
+                    <p>No contract payments yet. Connect a wallet, lock CELO, and the recipient will be able to withdraw after unlock.</p>
                   </div>
                 ) : (
                   payments.map((transaction) => (

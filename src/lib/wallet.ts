@@ -2,10 +2,55 @@ import { ethers } from 'ethers';
 
 export const SUPPORTED_TOKENS = ['CELO', 'cUSD'] as const;
 export type SupportedToken = (typeof SUPPORTED_TOKENS)[number];
+export const WALLET_TYPE_STORAGE_KEY = 'wallet_type';
 
 export const MINIMUM_TRANSFER_AMOUNTS: Record<SupportedToken, string> = {
   CELO: '0.001',
   cUSD: '0.01',
+};
+
+type InjectedEthereumProvider = {
+  isMiniPay?: boolean;
+  providers?: InjectedEthereumProvider[];
+};
+
+const getInjectedProviders = (): InjectedEthereumProvider[] => {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    return [];
+  }
+
+  const provider = window.ethereum as InjectedEthereumProvider;
+  return Array.isArray(provider.providers) && provider.providers.length > 0
+    ? provider.providers
+    : [provider];
+};
+
+export const isInjectedAvailable = () => getInjectedProviders().length > 0;
+
+export const isMiniPay = () => getInjectedProviders().some((provider) => provider.isMiniPay === true);
+
+export const getLastWalletType = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem(WALLET_TYPE_STORAGE_KEY);
+};
+
+export const setLastWalletType = (walletType: 'injected' | 'walletconnect') => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(WALLET_TYPE_STORAGE_KEY, walletType);
+};
+
+export const clearLastWalletType = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.removeItem(WALLET_TYPE_STORAGE_KEY);
 };
 
 export function formatWalletAddress(address: string, head = 8, tail = 6) {

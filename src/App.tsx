@@ -23,9 +23,11 @@ import { ScanPage } from "./pages/Scan.tsx";
 import { AdminDashboard } from "./pages/AdminDashboard.tsx";
 import LearnMorePage from "./pages/LearnMore.tsx";
 import WithdrawPage from "./pages/Withdraw.tsx";
-import { CeloProvider } from "./providers/CeloProvider";
+import WalletProviders from "./providers/WalletProviders";
 
 const queryClient = new QueryClient();
+
+const WalletRouteBoundary = ({ children }: { children: React.ReactNode }) => <WalletProviders>{children}</WalletProviders>;
 
 const SafeRoute = ({
   children,
@@ -68,19 +70,19 @@ const AppRoutes = () => {
       <Route path="/auth/*" element={renderSafeRoute("Auth", <AuthPages />)} />
       <Route
         path="/dashboard"
-        element={renderSafeRoute("Dashboard", <ProtectedRoute><Dashboard /></ProtectedRoute>)}
+        element={renderSafeRoute("Dashboard", <ProtectedRoute><WalletRouteBoundary><Dashboard /></WalletRouteBoundary></ProtectedRoute>)}
       />
       <Route
         path="/send"
-        element={renderSafeRoute("Send", <ProtectedRoute><SendPage /></ProtectedRoute>)}
+        element={renderSafeRoute("Send", <ProtectedRoute><WalletRouteBoundary><SendPage /></WalletRouteBoundary></ProtectedRoute>)}
       />
       <Route
         path="/receive"
-        element={renderSafeRoute("Receive", <ProtectedRoute><ReceivePage /></ProtectedRoute>)}
+        element={renderSafeRoute("Receive", <ProtectedRoute><WalletRouteBoundary><ReceivePage /></WalletRouteBoundary></ProtectedRoute>)}
       />
       <Route
         path="/withdraw"
-        element={renderSafeRoute("Withdraw", <ProtectedRoute><WithdrawPage /></ProtectedRoute>)}
+        element={renderSafeRoute("Withdraw", <ProtectedRoute><WalletRouteBoundary><WithdrawPage /></WalletRouteBoundary></ProtectedRoute>)}
       />
       <Route
         path="/scan"
@@ -149,15 +151,13 @@ const AppContent = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <CeloProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
-      </CeloProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 };

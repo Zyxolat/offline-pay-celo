@@ -119,7 +119,7 @@ export const useTimeLockPayments = () => {
       await refresh(nextAddress);
       return nextAddress;
     } catch (connectError) {
-      const message = connectError instanceof Error ? connectError.message : "Unable to connect MetaMask.";
+      const message = connectError instanceof Error ? connectError.message : "Unable to connect your wallet.";
       setError(message);
       throw new Error(message);
     }
