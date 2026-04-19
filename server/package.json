@@ -4,13 +4,14 @@
   "description": "OfflinePay API Server",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "nodemon index.js",
-    "build": "tsc",
+    "dev": "ts-node --esm src/app.ts",
+    "build": "tsc && node ./scripts/verify-build.mjs",
     "start": "node index.js",
-    "migrate": "node --loader ts-node/esm migrations/run.ts",
-    "migrate:create": "node --loader ts-node/esm migrations/create.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "migrate": "ts-node --esm migrations/run.ts"
   },
   "keywords": [
     "celo",
@@ -46,7 +47,6 @@
     "@types/pg": "^8.11.2",
     "@types/qrcode": "^1.5.6",
     "@types/uuid": "^9.0.7",
-    "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }

@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { log } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8,26 +9,172 @@ const serverRoot = path.join(__dirname, '../..');
 
 dotenv.config({ path: path.join(serverRoot, '.env') });
 
+function parsePort(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function tryParseOrigin(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function getFrontendOrigins(): string[] {
+  const rawValue = process.env.FRONTEND_URL?.trim();
+  const rawOrigins = rawValue
+    ? rawValue.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean)
+    : ['http://localhost:5173'];
+
+  const validOrigins: string[] = [];
+
+  for (const origin of rawOrigins) {
+    const parsed = tryParseOrigin(origin);
+
+    if (!parsed) {
+      log('WARN', 'Ignoring malformed FRONTEND_URL origin', { origin });
+      continue;
+    }
+
+    validOrigins.push(parsed.origin);
+  }
+
+  if (validOrigins.length === 0) {
+    const webauthnFallback = process.env.WEBAUTHN_ORIGIN?.trim();
+    const parsedFallback = webauthnFallback ? tryParseOrigin(normalizeOrigin(webauthnFallback)) : null;
+
+    if (parsedFallback) {
+      log('WARN', 'No valid FRONTEND_URL origins found; falling back to WEBAUTHN_ORIGIN', {
+        fallbackOrigin: parsedFallback.origin,
+      });
+      return [parsedFallback.origin];
+    }
+
+    log('WARN', 'No valid FRONTEND_URL origins found; falling back to localhost only');
+    return ['http://localhost:5173'];
+  }
+
+  return [...new Set(validOrigins)];
+}
+
+function getWebauthnOrigin(frontendOrigin: string): string {
+  const rawValue = process.env.WEBAUTHN_ORIGIN?.trim();
+  const isDevDefault =
+    !rawValue ||
+    rawValue === 'http://localhost:5173' ||
+    rawValue === 'http://127.0.0.1:5173';
+  const value = normalizeOrigin(
+    isProduction() && isDevDefault ? frontendOrigin : (rawValue || frontendOrigin).trim()
+  );
+  const parsed = tryParseOrigin(value);
+
+  if (!parsed) {
+    throw new Error('WEBAUTHN_ORIGIN must be a valid absolute origin');
+  }
+
+  if (isProduction() && parsed.protocol !== 'https:') {
+    throw new Error('WEBAUTHN_ORIGIN must use https:// in production');
+  }
+
+  return parsed.origin;
+}
+
+function getJwtSecret(): string {
+  const fallback = 'offlinepay-dev-secret-change-me';
+  const value = (process.env.JWT_SECRET || fallback).trim();
+
+  if (isProduction() && value === fallback) {
+    throw new Error('JWT_SECRET must be set to a strong non-default value in production');
+  }
+
+  return value;
+}
+
+function getAdminPassword(): string {
+  const fallback = 'admin123';
+  const value = (process.env.ADMIN_PASSWORD || fallback).trim();
+
+  if (isProduction() && value === fallback) {
+    throw new Error('ADMIN_PASSWORD must be set to a strong non-default value in production');
+  }
+
+  return value;
+}
+
+function getDatabaseConfig() {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+
+  if (isProduction()) {
+    const requiredUrl = requireEnv('DATABASE_URL');
+    let parsed: URL;
+
+    try {
+      parsed = new URL(requiredUrl);
+    } catch {
+      throw new Error('DATABASE_URL must be a valid PostgreSQL connection string');
+    }
+
+    if (/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
+      throw new Error('DATABASE_URL cannot point to localhost in production');
+    }
+
+    return {
+      url: requiredUrl,
+      ssl: true,
+    };
+  }
+
+  if (databaseUrl) {
+    return {
+      url: databaseUrl,
+      ssl: process.env.DB_SSL === 'true',
+    };
+  }
+
+  return {
+    url: 'postgresql://postgres:postgres@localhost:5432/offlinepay',
+    ssl: false,
+  };
+}
+
+const frontendOrigins = getFrontendOrigins();
+const webauthnOrigin = getWebauthnOrigin(frontendOrigins[0]);
+const databaseConfig = getDatabaseConfig();
+
 export const config = {
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parsePort(process.env.PORT, 3001),
   nodeEnv: process.env.NODE_ENV || 'development',
 
-  db: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-    name: process.env.DB_NAME || 'offlinepay',
-  },
+  db: databaseConfig,
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'offlinepay-dev-secret-change-me',
+    secret: getJwtSecret(),
     expiry: process.env.JWT_EXPIRY || '1h',
   },
 
   admin: {
     email: process.env.ADMIN_EMAIL || 'admin@offlinepay.local',
-    password: process.env.ADMIN_PASSWORD || 'admin123',
+    password: getAdminPassword(),
   },
 
   google: {
@@ -37,7 +184,7 @@ export const config = {
   webauthn: {
     rpName: process.env.WEBAUTHN_RP_NAME || 'OfflinePay',
     rpID: process.env.WEBAUTHN_RP_ID || 'localhost',
-    origin: process.env.WEBAUTHN_ORIGIN || 'http://localhost:5173',
+    origin: webauthnOrigin,
   },
 
   celo: {
@@ -49,10 +196,15 @@ export const config = {
   },
 
   frontend: {
-    url: process.env.FRONTEND_URL || 'http://localhost:5173',
+    url: frontendOrigins[0],
+    allowedOrigins: frontendOrigins,
   },
 
   logging: {
     level: process.env.LOG_LEVEL || 'info',
+  },
+
+  validation: {
+    criticalEnvLoaded: true,
   },
 };

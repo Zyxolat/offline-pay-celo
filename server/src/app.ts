@@ -1,12 +1,14 @@
 import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
+import type { Server } from 'node:http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { config } from './config/index.js';
+import { closeDatabasePool, connectDatabaseWithRetry, getDatabaseStatus } from './config/database.js';
 import { limiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { createAdvancedAuthTables } from './models/AdvancedAuthMigration.js';
-import { verifyDatabaseConnection } from './config/database.js';
+import { log, serializeError } from './utils/logger.js';
 
 import authRoutes from './routes/auth.js';
 import walletRoutes from './routes/wallet.js';
@@ -17,15 +19,24 @@ import adminRoutes from './routes/admin.js';
 
 const app = express();
 const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+const HOST = '0.0.0.0';
+const allowedOrigins = new Set(config.frontend.allowedOrigins);
+const bootTime = Date.now();
+let isShuttingDown = false;
+let server: Server | null = null;
 
 // Security middleware
 app.use(helmet());
 
 // Log CORS configuration
-console.log(`🔐 CORS enabled for: ${config.frontend.url}`);
-console.log(`🔐 WebAuthn Origin: ${config.webauthn.origin}`);
+log('INFO', 'Configured CORS origins', {
+  origins: Array.from(allowedOrigins),
+});
+log('INFO', 'Configured WebAuthn origin', {
+  origin: config.webauthn.origin,
+});
 if (config.nodeEnv !== 'production') {
-  console.log('🔐 Local development CORS enabled for localhost origins');
+  log('INFO', 'Local development CORS enabled for localhost origins');
 }
 
 app.use(cors({
@@ -34,7 +45,7 @@ app.use(cors({
       return callback(null, true);
     }
 
-    const isConfiguredOrigin = origin === config.frontend.url;
+    const isConfiguredOrigin = allowedOrigins.has(origin.replace(/\/+$/, ''));
     const isLocalDevOrigin =
       config.nodeEnv !== 'production' && localhostOriginPattern.test(origin);
 
@@ -48,6 +59,28 @@ app.use(cors({
   optionsSuccessStatus: 200,
 }));
 
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
+  const start = Date.now();
+  const database = getDatabaseStatus();
+
+  res.setHeader('x-request-id', requestId);
+  res.locals.requestId = requestId;
+
+  res.on('finish', () => {
+    log('INFO', 'HTTP request completed', {
+      requestId,
+      method: req.method,
+      route: req.originalUrl,
+      statusCode: res.statusCode,
+      latencyMs: Date.now() - start,
+      dbStatus: database.phase,
+    });
+  });
+
+  next();
+});
+
 // Logging
 app.use(morgan('combined'));
 
@@ -60,7 +93,57 @@ app.use(limiter);
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/ready', (req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+  const ready = config.validation.criticalEnvLoaded && database.isReady;
+
+  res.status(ready ? 200 : 503).json({
+    db: ready ? 'connected' : database.isConnecting ? 'connecting' : 'failed',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/status', (req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+
+  res.json({
+    uptime: process.uptime(),
+    environment: config.nodeEnv,
+    db: {
+      phase: database.phase,
+      isReady: database.isReady,
+      isConnecting: database.isConnecting,
+      attempts: database.attempts,
+      circuitState: database.circuitState,
+      lastConnectedAt: database.lastConnectedAt,
+      cooldownUntil: database.cooldownUntil,
+    },
+    memory: process.memoryUsage(),
+    shuttingDown: isShuttingDown,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  const database = getDatabaseStatus();
+
+  if (!database.isReady) {
+    res.setHeader('Retry-After', '3');
+    return res.status(503).json({
+      error: 'service warming up',
+      retryAfter: 3,
+    });
+  }
+
+  next();
 });
 
 // API routes
@@ -84,23 +167,73 @@ app.use(errorHandler);
 
 const PORT = config.port;
 
-// Run migrations on startup
-async function startServer() {
-  try {
-    await verifyDatabaseConnection();
-    await createAdvancedAuthTables();
-    
-    app.listen(PORT, () => {
-      console.log(`OfflinePay API Server running on port ${PORT}`);
-      console.log(`Environment: ${config.nodeEnv}`);
-      console.log(`Celo Network: ${config.celo.network}`);
+function startServer() {
+  log('INFO', 'Starting API server', {
+    host: HOST,
+    port: PORT,
+    environment: config.nodeEnv,
+  });
+
+  server = app.listen(PORT, HOST, () => {
+    log('INFO', 'API server is listening', {
+      host: HOST,
+      port: PORT,
+      environment: config.nodeEnv,
+      celoNetwork: config.celo.network,
     });
+
+    void connectDatabaseWithRetry();
+  });
+
+  server.on('error', (error) => {
+    log('ERROR', 'HTTP server failed to start', serializeError(error));
+    process.exit(1);
+  });
+}
+
+async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+  log('INFO', 'Shutdown initiated', {
+    signal,
+    uptimeSeconds: process.uptime(),
+  });
+
+  try {
+    if (server) {
+      await new Promise<void>((resolve, reject) => {
+        server?.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+      log('INFO', 'HTTP server closed');
+    }
+
+    await closeDatabasePool();
+    log('INFO', 'Shutdown completed successfully');
+    process.exit(0);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    log('ERROR', 'Shutdown failed', serializeError(error));
     process.exit(1);
   }
 }
 
 startServer();
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});
 
 export default app;

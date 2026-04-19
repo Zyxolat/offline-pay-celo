@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import { Decimal } from 'decimal.js';
 import qrcode from 'qrcode';
 import { UserModel } from '../models/User.js';
 import { TransactionModel } from '../models/Transaction.js';
