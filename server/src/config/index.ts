@@ -183,11 +183,13 @@ function getDatabaseConfig() {
     ssl: false,
     source: 'local',
     local: {
-      host: process.env.PGHOST?.trim() || process.env.DB_HOST?.trim() || '127.0.0.1',
-      port: parsePort(process.env.PGPORT || process.env.DB_PORT, 5432),
-      user: process.env.PGUSER?.trim() || process.env.DB_USER?.trim() || 'postgres',
-      password: process.env.PGPASSWORD ?? process.env.DB_PASSWORD ?? 'postgres',
-      database: process.env.PGDATABASE?.trim() || process.env.DB_NAME?.trim() || 'offlinepay',
+      host: process.env.PGHOST?.trim() || process.env.DB_HOST?.trim(),
+      port: process.env.PGPORT || process.env.DB_PORT
+        ? parsePort(process.env.PGPORT || process.env.DB_PORT, 5432)
+        : undefined,
+      user: process.env.PGUSER?.trim() || process.env.DB_USER?.trim(),
+      password: process.env.PGPASSWORD ?? process.env.DB_PASSWORD,
+      database: process.env.PGDATABASE?.trim() || process.env.DB_NAME?.trim(),
     },
   } satisfies DatabaseConfig;
 }

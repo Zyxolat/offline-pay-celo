@@ -3,12 +3,9 @@ import { config } from './index.js';
 import { log, serializeError } from '../utils/logger.js';
 
 const { Pool } = pkg;
-const MAX_CONNECTION_RETRIES = 10;
-const CONNECTION_TIMEOUT_MS = 7000;
+const CONNECTION_TIMEOUT_MS = 10000;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 30000;
-const CIRCUIT_BREAKER_THRESHOLD = 3;
-const CIRCUIT_BREAKER_COOLDOWN_MS = 30000;
 const RETRYABLE_ERROR_CODES = new Set([
   'ETIMEDOUT',
   'ECONNRESET',
@@ -17,12 +14,6 @@ const RETRYABLE_ERROR_CODES = new Set([
   'EHOSTUNREACH',
   '57P01',
   '53300',
-]);
-const FAIL_FAST_ERROR_CODES = new Set([
-  '28P01',
-  '3D000',
-  'ENOTFOUND',
-  'EAI_AGAIN',
 ]);
 
 const isProduction = config.nodeEnv === 'production';
@@ -94,41 +85,18 @@ function getErrorCode(error: unknown) {
   return undefined;
 }
 
-function isFailFastError(error: unknown) {
-  const code = getErrorCode(error);
-  return code ? FAIL_FAST_ERROR_CODES.has(code) : false;
-}
-
 function isRetryableError(error: unknown) {
   const code = getErrorCode(error);
-  if (!code) {
-    return true;
-  }
-
-  if (FAIL_FAST_ERROR_CODES.has(code)) {
-    return false;
-  }
-
-  return RETRYABLE_ERROR_CODES.has(code);
-}
-
-function openCircuit(error: unknown) {
-  const cooldownUntil = new Date(Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS).toISOString();
-  databaseState.circuitState = 'open';
-  databaseState.phase = 'failed';
-  databaseState.cooldownUntil = cooldownUntil;
-
-  log('WARN', 'Database circuit breaker opened', {
-    cooldownMs: CIRCUIT_BREAKER_COOLDOWN_MS,
-    cooldownUntil,
-    error: serializeError(error),
-  });
+  return code ? RETRYABLE_ERROR_CODES.has(code) : true;
 }
 
 function getConnectionLogMeta() {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+
   return {
     source: config.db.source,
-    hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+    hasDatabaseUrl: Boolean(databaseUrl),
+    databaseUrlPreview: databaseUrl ? `${databaseUrl.slice(0, 30)}...` : undefined,
     ssl: Boolean(poolConfig.ssl),
     host: config.db.url ? undefined : config.db.local?.host,
     port: config.db.url ? undefined : config.db.local?.port,
@@ -195,39 +163,42 @@ export async function connectDatabaseWithRetry() {
 
   databaseState.isConnecting = true;
   databaseState.phase = 'connecting';
+  databaseState.circuitState = 'half_open';
 
-  for (let attempt = 1; attempt <= MAX_CONNECTION_RETRIES; attempt += 1) {
-    if (databaseState.circuitState === 'open') {
-      const cooldownUntil = databaseState.cooldownUntil ? new Date(databaseState.cooldownUntil).getTime() : 0;
-      const remainingMs = Math.max(0, cooldownUntil - Date.now());
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  console.log('DB URL:', databaseUrl ? `${databaseUrl.slice(0, 30)}...` : 'not set');
 
-      if (remainingMs > 0) {
-        log('WARN', 'Database circuit breaker cooldown active', {
-          remainingMs,
-          cooldownUntil: databaseState.cooldownUntil,
-        });
-        await sleep(remainingMs);
-      }
-
-      databaseState.circuitState = 'half_open';
-      databaseState.phase = 'connecting';
-      log('INFO', 'Database circuit breaker moved to half-open state');
-    }
-
+  for (let attempt = 1; ; attempt += 1) {
     databaseState.attempts = attempt;
 
     log('INFO', 'Attempting PostgreSQL connection', {
       attempt,
-      maxRetries: MAX_CONNECTION_RETRIES,
       timeoutMs: CONNECTION_TIMEOUT_MS,
       ...getConnectionLogMeta(),
     });
 
     try {
-      await verifyDatabaseConnection();
+      const client = await withTimeout(pool.connect(), CONNECTION_TIMEOUT_MS, 'Database connection');
+
+      console.log('✅ Connected to PostgreSQL');
+
+      try {
+        await withTimeout(
+          client.query<{ now: Date }>('SELECT NOW() AS now'),
+          CONNECTION_TIMEOUT_MS,
+          'Database query'
+        );
+      } finally {
+        client.release();
+      }
+
       databaseState.isConnecting = false;
       databaseState.isConnected = true;
       databaseState.isReady = true;
+      databaseState.phase = 'connected';
+      databaseState.circuitState = 'closed';
+      databaseState.cooldownUntil = null;
+      databaseState.lastError = null;
 
       log('INFO', 'PostgreSQL is ready', {
         attempt,
@@ -239,59 +210,38 @@ export async function connectDatabaseWithRetry() {
       databaseState.isConnected = false;
       databaseState.isReady = false;
       databaseState.phase = 'failed';
+      databaseState.circuitState = 'half_open';
       databaseState.lastError = serializeError(error);
       databaseState.consecutiveFailures += 1;
-      const failFast = isFailFastError(error);
       const retryable = isRetryableError(error);
+      const retryInMs = getRetryDelay(attempt);
+
+      console.error(
+        '❌ PostgreSQL connection error:',
+        error instanceof Error ? error.message : String(error)
+      );
 
       log('WARN', 'PostgreSQL connection attempt failed', {
         attempt,
-        maxRetries: MAX_CONNECTION_RETRIES,
-        retryInMs: attempt < MAX_CONNECTION_RETRIES ? getRetryDelay(attempt) : 0,
+        retryInMs,
         code: getErrorCode(error),
-        failFast,
         retryable,
         error: serializeError(error),
         ...getConnectionLogMeta(),
       });
 
-      if (failFast) {
-        databaseState.isConnecting = false;
-        openCircuit(error);
-        log('ERROR', 'PostgreSQL connection failed with non-retryable error', {
-          code: getErrorCode(error),
-          error: serializeError(error),
-          hint: isProduction
-            ? 'Verify Railway DATABASE_URL is set and reachable with SSL enabled.'
-            : 'Verify local PostgreSQL settings or set DATABASE_URL for a managed instance.',
-          ...getConnectionLogMeta(),
-        });
-        process.exit(1);
-      }
+      log('ERROR', 'PostgreSQL connection failed; retry scheduled', {
+        code: getErrorCode(error),
+        retryInMs,
+        hint: isProduction
+          ? 'Verify Railway DATABASE_URL and SSL-enabled PostgreSQL access.'
+          : 'Verify local PostgreSQL env vars or provide DATABASE_URL.',
+        ...getConnectionLogMeta(),
+      });
 
-      if (!retryable || databaseState.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
-        openCircuit(error);
-      }
-
-      if (attempt === MAX_CONNECTION_RETRIES) {
-        databaseState.isConnecting = false;
-        log('ERROR', 'PostgreSQL connection retries exhausted', {
-          attempts: MAX_CONNECTION_RETRIES,
-          error: serializeError(error),
-          hint: isProduction
-            ? 'Check Railway runtime environment variables and PostgreSQL network access.'
-            : 'Check local PostgreSQL availability or set DATABASE_URL for development.',
-          ...getConnectionLogMeta(),
-        });
-        process.exit(1);
-      }
-
-      await sleep(getRetryDelay(attempt));
+      await sleep(retryable ? retryInMs : MAX_RETRY_DELAY_MS);
     }
   }
-
-  databaseState.isConnecting = false;
-  return false;
 }
 
 export async function closeDatabasePool() {
