@@ -199,7 +199,7 @@ const webauthnOrigin = getWebauthnOrigin(frontendOrigins[0]);
 const databaseConfig = getDatabaseConfig();
 
 export const config = {
-  port: parsePort(process.env.PORT, 3001),
+  port: parsePort(process.env.PORT, 0),
   nodeEnv: process.env.NODE_ENV || 'development',
 
   db: databaseConfig,

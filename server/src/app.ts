@@ -8,7 +8,7 @@ import { config } from './config/index.js';
 import { closeDatabasePool, connectDatabaseWithRetry, getDatabaseStatus } from './config/database.js';
 import { limiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { log } from './utils/logger.js';
+import { log, normalizeError } from './utils/logger.js';
 
 import authRoutes from './routes/auth.js';
 import walletRoutes from './routes/wallet.js';
@@ -22,8 +22,6 @@ const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::
 const HOST = '0.0.0.0';
 
 const allowedOrigins = new Set(config.frontend.allowedOrigins);
-const bootTime = Date.now();
-
 let isShuttingDown = false;
 let server: Server | null = null;
 
@@ -82,6 +80,19 @@ app.use(express.urlencoded({ extended: true }));
 app.use(limiter);
 
 // Health check
+app.get('/', (req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+
+  res.status(200).json({
+    status: 'ok',
+    service: 'offlinepay-backend',
+    environment: config.nodeEnv,
+    uptime: process.uptime(),
+    db: database.phase,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
@@ -156,7 +167,17 @@ app.use((req: Request, res: Response) => {
 // Error handler
 app.use(errorHandler);
 
-const PORT = config.port;
+const PORT = Number.parseInt(process.env.PORT ?? '', 10) || config.port;
+
+function registerGlobalErrorHandlers() {
+  process.on('uncaughtException', (error) => {
+    log('ERROR', 'Uncaught exception', normalizeError(error));
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    log('ERROR', 'Unhandled promise rejection', normalizeError(reason));
+  });
+}
 
 function startServer() {
   log('INFO', 'Starting API server', {
@@ -165,7 +186,7 @@ function startServer() {
     environment: config.nodeEnv,
   });
 
-  server = app.listen(PORT, '0.0.0.0', () => {
+  server = app.listen(PORT, HOST, () => {
     log('INFO', 'API server is listening', {
       host: HOST,
       port: PORT,
@@ -176,20 +197,14 @@ function startServer() {
     void (async () => {
       try {
         await connectDatabaseWithRetry();
-      } catch (err) {
-        log('ERROR', 'DB connection failed', {
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+      } catch (error) {
+        log('ERROR', 'DB connection failed', normalizeError(error));
       }
     })();
   });
 
   server.on('error', (error) => {
-    log('ERROR', 'HTTP server failed to start', {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    log('ERROR', 'HTTP server failed to start', normalizeError(error));
 
     process.exit(1);
   });
@@ -222,15 +237,13 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
     log('INFO', 'Shutdown completed successfully');
     process.exit(0);
   } catch (error) {
-    log('ERROR', 'Shutdown failed', {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    log('ERROR', 'Shutdown failed', normalizeError(error));
 
     process.exit(1);
   }
 }
 
+registerGlobalErrorHandlers();
 startServer();
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
