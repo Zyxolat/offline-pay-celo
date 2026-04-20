@@ -174,7 +174,7 @@ function startServer() {
     environment: config.nodeEnv,
   });
 
-  server = app.listen(PORT, HOST, () => {
+  server = app.listen(PORT, '0.0.0.0', () => {
     log('INFO', 'API server is listening', {
       host: HOST,
       port: PORT,
