@@ -8,7 +8,7 @@ import { config } from './config/index.js';
 import { closeDatabasePool, connectDatabaseWithRetry, getDatabaseStatus } from './config/database.js';
 import { limiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { log, serializeError } from './utils/logger.js';
+import { log } from './utils/logger.js';
 
 import authRoutes from './routes/auth.js';
 import walletRoutes from './routes/wallet.js';
@@ -20,30 +20,19 @@ import adminRoutes from './routes/admin.js';
 const app = express();
 const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 const HOST = '0.0.0.0';
+
 const allowedOrigins = new Set(config.frontend.allowedOrigins);
 const bootTime = Date.now();
+
 let isShuttingDown = false;
 let server: Server | null = null;
 
 // Security middleware
 app.use(helmet());
 
-// Log CORS configuration
-log('INFO', 'Configured CORS origins', {
-  origins: Array.from(allowedOrigins),
-});
-log('INFO', 'Configured WebAuthn origin', {
-  origin: config.webauthn.origin,
-});
-if (config.nodeEnv !== 'production') {
-  log('INFO', 'Local development CORS enabled for localhost origins');
-}
-
 app.use(cors({
   origin(origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
 
     const isConfiguredOrigin = allowedOrigins.has(origin.replace(/\/+$/, ''));
     const isLocalDevOrigin =
@@ -59,6 +48,7 @@ app.use(cors({
   optionsSuccessStatus: 200,
 }));
 
+// Request logger middleware
 app.use((req, res, next) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
   const start = Date.now();
@@ -132,6 +122,7 @@ app.get('/status', (req: Request, res: Response) => {
   });
 });
 
+// Block API until DB ready
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const database = getDatabaseStatus();
 
@@ -146,7 +137,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// API routes
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -154,7 +145,7 @@ app.use('/api/queue', queueRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 
-// 404 handler
+// 404
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: 'Not Found',
@@ -175,34 +166,41 @@ function startServer() {
   });
 
   server = app.listen(PORT, '0.0.0.0', () => {
-  log('INFO', 'API server is listening', {
-    host: HOST,
-    port: PORT,
-    environment: config.nodeEnv,
-    celoNetwork: config.celo.network,
+    log('INFO', 'API server is listening', {
+      host: HOST,
+      port: PORT,
+      environment: config.nodeEnv,
+      celoNetwork: config.celo.network,
+    });
+
+    void (async () => {
+      try {
+        await connectDatabaseWithRetry();
+      } catch (err) {
+        log('ERROR', 'DB connection failed', {
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
+    })();
   });
 
-  void (async () => {
-    try {
-      await connectDatabaseWithRetry();
-    } catch (err) {
-      log('ERROR', 'DB connection failed', err);
-    }
-  })();
-});
-
   server.on('error', (error) => {
-    log('ERROR', 'HTTP server failed to start', serializeError(error));
+    log('ERROR', 'HTTP server failed to start', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     process.exit(1);
   });
 }
 
+// Graceful shutdown
 async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
-  if (isShuttingDown) {
-    return;
-  }
+  if (isShuttingDown) return;
 
   isShuttingDown = true;
+
   log('INFO', 'Shutdown initiated', {
     signal,
     uptimeSeconds: process.uptime(),
@@ -212,14 +210,11 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
     if (server) {
       await new Promise<void>((resolve, reject) => {
         server?.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
+          if (error) return reject(error);
           resolve();
         });
       });
+
       log('INFO', 'HTTP server closed');
     }
 
@@ -227,19 +222,18 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
     log('INFO', 'Shutdown completed successfully');
     process.exit(0);
   } catch (error) {
-    log('ERROR', 'Shutdown failed', serializeError(error));
+    log('ERROR', 'Shutdown failed', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     process.exit(1);
   }
 }
 
 startServer();
 
-process.on('SIGTERM', () => {
-  void shutdown('SIGTERM');
-});
-
-process.on('SIGINT', () => {
-  void shutdown('SIGINT');
-});
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 export default app;
