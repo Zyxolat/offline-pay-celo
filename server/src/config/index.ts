@@ -121,18 +121,42 @@ function getAdminPassword(): string {
   return value;
 }
 
+type DatabaseConfig = {
+  url?: string;
+  ssl: boolean;
+  source: 'database_url' | 'local';
+  local?: {
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    database?: string;
+  };
+};
+
+function parseDatabaseUrl(value: string): URL {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('DATABASE_URL must be a valid PostgreSQL connection string');
+  }
+
+  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
+    throw new Error('DATABASE_URL must use the postgres:// or postgresql:// protocol');
+  }
+
+  return parsed;
+}
+
 function getDatabaseConfig() {
   const databaseUrl = process.env.DATABASE_URL?.trim();
+  const isProd = isProduction();
 
-  if (isProduction()) {
+  if (isProd) {
     const requiredUrl = requireEnv('DATABASE_URL');
-    let parsed: URL;
-
-    try {
-      parsed = new URL(requiredUrl);
-    } catch {
-      throw new Error('DATABASE_URL must be a valid PostgreSQL connection string');
-    }
+    const parsed = parseDatabaseUrl(requiredUrl);
 
     if (/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
       throw new Error('DATABASE_URL cannot point to localhost in production');
@@ -141,20 +165,31 @@ function getDatabaseConfig() {
     return {
       url: requiredUrl,
       ssl: true,
+      source: 'database_url',
     };
   }
 
   if (databaseUrl) {
+    parseDatabaseUrl(databaseUrl);
+
     return {
       url: databaseUrl,
-      ssl: process.env.DB_SSL === 'true',
+      ssl: false,
+      source: 'database_url',
     };
   }
 
   return {
-    url: 'postgresql://postgres:postgres@localhost:5432/offlinepay',
     ssl: false,
-  };
+    source: 'local',
+    local: {
+      host: process.env.PGHOST?.trim() || process.env.DB_HOST?.trim() || '127.0.0.1',
+      port: parsePort(process.env.PGPORT || process.env.DB_PORT, 5432),
+      user: process.env.PGUSER?.trim() || process.env.DB_USER?.trim() || 'postgres',
+      password: process.env.PGPASSWORD ?? process.env.DB_PASSWORD ?? 'postgres',
+      database: process.env.PGDATABASE?.trim() || process.env.DB_NAME?.trim() || 'offlinepay',
+    },
+  } satisfies DatabaseConfig;
 }
 
 const frontendOrigins = getFrontendOrigins();

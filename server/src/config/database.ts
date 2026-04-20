@@ -25,15 +25,24 @@ const FAIL_FAST_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
+const isProduction = config.nodeEnv === 'production';
 const poolConfig = config.db.url
   ? {
       connectionString: config.db.url,
-      ssl: config.db.ssl ? { rejectUnauthorized: false } : undefined,
+      ssl: isProduction
+        ? { rejectUnauthorized: false }
+        : false,
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     }
-  : undefined;
+  : {
+      ...config.db.local,
+      ssl: false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    };
 
 const pool = new Pool(poolConfig);
 type DatabasePhase = 'connecting' | 'connected' | 'failed';
@@ -116,6 +125,18 @@ function openCircuit(error: unknown) {
   });
 }
 
+function getConnectionLogMeta() {
+  return {
+    source: config.db.source,
+    hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim()),
+    ssl: Boolean(poolConfig.ssl),
+    host: config.db.url ? undefined : config.db.local?.host,
+    port: config.db.url ? undefined : config.db.local?.port,
+    database: config.db.url ? undefined : config.db.local?.database,
+    nodeEnv: config.nodeEnv,
+  };
+}
+
 pool.on('error', (error: Error & { code?: string }) => {
   databaseState.isConnected = false;
   databaseState.isReady = false;
@@ -125,6 +146,7 @@ pool.on('error', (error: Error & { code?: string }) => {
   log('ERROR', 'Unexpected PostgreSQL pool error', {
     ...serializeError(error),
     ...(error.code ? { code: error.code } : {}),
+    ...getConnectionLogMeta(),
   });
 
   if (!databaseState.isConnecting) {
@@ -143,7 +165,7 @@ pool.on('connect', () => {
   databaseState.cooldownUntil = null;
 
   log('INFO', 'PostgreSQL connection established', {
-    mode: config.db.url ? 'database_url' : 'local',
+    ...getConnectionLogMeta(),
   });
 });
 
@@ -198,6 +220,7 @@ export async function connectDatabaseWithRetry() {
       attempt,
       maxRetries: MAX_CONNECTION_RETRIES,
       timeoutMs: CONNECTION_TIMEOUT_MS,
+      ...getConnectionLogMeta(),
     });
 
     try {
@@ -229,6 +252,7 @@ export async function connectDatabaseWithRetry() {
         failFast,
         retryable,
         error: serializeError(error),
+        ...getConnectionLogMeta(),
       });
 
       if (failFast) {
@@ -237,6 +261,10 @@ export async function connectDatabaseWithRetry() {
         log('ERROR', 'PostgreSQL connection failed with non-retryable error', {
           code: getErrorCode(error),
           error: serializeError(error),
+          hint: isProduction
+            ? 'Verify Railway DATABASE_URL is set and reachable with SSL enabled.'
+            : 'Verify local PostgreSQL settings or set DATABASE_URL for a managed instance.',
+          ...getConnectionLogMeta(),
         });
         process.exit(1);
       }
@@ -250,6 +278,10 @@ export async function connectDatabaseWithRetry() {
         log('ERROR', 'PostgreSQL connection retries exhausted', {
           attempts: MAX_CONNECTION_RETRIES,
           error: serializeError(error),
+          hint: isProduction
+            ? 'Check Railway runtime environment variables and PostgreSQL network access.'
+            : 'Check local PostgreSQL availability or set DATABASE_URL for development.',
+          ...getConnectionLogMeta(),
         });
         process.exit(1);
       }
