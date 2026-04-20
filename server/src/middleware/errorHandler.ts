@@ -7,6 +7,10 @@ export interface ApiError extends Error {
 }
 
 export const errorHandler = (err: ApiError, req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   console.error('[ERROR]', {
     ...normalizeError(err),
     details: err.details,

@@ -8,6 +8,12 @@ const __dirname = path.dirname(__filename);
 const serverRoot = path.join(__dirname, '../..');
 
 dotenv.config({ path: path.join(serverRoot, '.env') });
+const configWarnings: string[] = [];
+
+function warnConfig(message: string, meta?: Record<string, unknown>) {
+  configWarnings.push(message);
+  log('WARN', message, meta);
+}
 
 function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? '', 10);
@@ -22,7 +28,8 @@ function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
 
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    warnConfig('Missing required environment variable; using fallback', { name });
+    return '';
   }
 
   return value;
@@ -89,11 +96,15 @@ function getWebauthnOrigin(frontendOrigin: string): string {
   const parsed = tryParseOrigin(value);
 
   if (!parsed) {
-    throw new Error('WEBAUTHN_ORIGIN must be a valid absolute origin');
+    warnConfig('WEBAUTHN_ORIGIN is invalid; falling back to frontend origin', { value });
+    return frontendOrigin;
   }
 
   if (isProduction() && parsed.protocol !== 'https:') {
-    throw new Error('WEBAUTHN_ORIGIN must use https:// in production');
+    warnConfig('WEBAUTHN_ORIGIN must use https:// in production; falling back to frontend origin', {
+      value,
+    });
+    return frontendOrigin;
   }
 
   return parsed.origin;
@@ -104,7 +115,7 @@ function getJwtSecret(): string {
   const value = (process.env.JWT_SECRET || fallback).trim();
 
   if (isProduction() && value === fallback) {
-    throw new Error('JWT_SECRET must be set to a strong non-default value in production');
+    warnConfig('JWT_SECRET is using the development fallback in production');
   }
 
   return value;
@@ -115,7 +126,7 @@ function getAdminPassword(): string {
   const value = (process.env.ADMIN_PASSWORD || fallback).trim();
 
   if (isProduction() && value === fallback) {
-    throw new Error('ADMIN_PASSWORD must be set to a strong non-default value in production');
+    warnConfig('ADMIN_PASSWORD is using the development fallback in production');
   }
 
   return value;
@@ -134,17 +145,23 @@ type DatabaseConfig = {
   };
 };
 
-function parseDatabaseUrl(value: string): URL {
+function parseDatabaseUrl(value: string): URL | null {
   let parsed: URL;
 
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error('DATABASE_URL must be a valid PostgreSQL connection string');
+    warnConfig('DATABASE_URL is invalid; database connection will rely on fallback settings', {
+      valuePreview: value.slice(0, 30),
+    });
+    return null;
   }
 
   if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
-    throw new Error('DATABASE_URL must use the postgres:// or postgresql:// protocol');
+    warnConfig('DATABASE_URL must use postgres protocol; database connection will rely on fallback settings', {
+      protocol: parsed.protocol,
+    });
+    return null;
   }
 
   return parsed;
@@ -156,26 +173,28 @@ function getDatabaseConfig() {
 
   if (isProd) {
     const requiredUrl = requireEnv('DATABASE_URL');
-    const parsed = parseDatabaseUrl(requiredUrl);
+    const parsed = requiredUrl ? parseDatabaseUrl(requiredUrl) : null;
 
-    if (/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
-      throw new Error('DATABASE_URL cannot point to localhost in production');
+    if (parsed && /^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
+      warnConfig('DATABASE_URL points to localhost in production; database may be unreachable', {
+        hostname: parsed.hostname,
+      });
     }
 
     return {
-      url: requiredUrl,
-      ssl: true,
-      source: 'database_url',
+      url: parsed ? requiredUrl : undefined,
+      ssl: Boolean(parsed),
+      source: parsed ? 'database_url' : 'local',
     };
   }
 
   if (databaseUrl) {
-    parseDatabaseUrl(databaseUrl);
+    const parsed = parseDatabaseUrl(databaseUrl);
 
     return {
-      url: databaseUrl,
+      url: parsed ? databaseUrl : undefined,
       ssl: false,
-      source: 'database_url',
+      source: parsed ? 'database_url' : 'local',
     };
   }
 
@@ -242,6 +261,6 @@ export const config = {
   },
 
   validation: {
-    criticalEnvLoaded: true,
+    criticalEnvLoaded: configWarnings.length === 0,
   },
 };

@@ -49,6 +49,9 @@ const databaseState = {
   consecutiveFailures: 0,
   cooldownUntil: null as string | null,
 };
+let connectionAttemptPromise: Promise<boolean> | null = null;
+let reconnectScheduled = false;
+let hasLoggedInitialConnection = false;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -118,8 +121,12 @@ pool.on('error', (error: Error & { code?: string }) => {
     ...getConnectionLogMeta(),
   });
 
-  if (!databaseState.isConnecting) {
-    void connectDatabaseWithRetry();
+  if (!databaseState.isConnecting && !reconnectScheduled) {
+    reconnectScheduled = true;
+
+    void connectDatabaseWithRetry().finally(() => {
+      reconnectScheduled = false;
+    });
   }
 });
 
@@ -133,9 +140,13 @@ pool.on('connect', () => {
   databaseState.consecutiveFailures = 0;
   databaseState.cooldownUntil = null;
 
-  log('INFO', 'PostgreSQL connection established', {
-    ...getConnectionLogMeta(),
-  });
+  if (!hasLoggedInitialConnection) {
+    hasLoggedInitialConnection = true;
+
+    log('INFO', 'PostgreSQL connection established', {
+      ...getConnectionLogMeta(),
+    });
+  }
 });
 
 export async function verifyDatabaseConnection() {
@@ -158,90 +169,98 @@ export function getDatabaseStatus() {
 }
 
 export async function connectDatabaseWithRetry() {
-  if (databaseState.isConnecting) {
-    return databaseState.isReady;
+  if (connectionAttemptPromise) {
+    return connectionAttemptPromise;
   }
 
-  databaseState.isConnecting = true;
-  databaseState.phase = 'connecting';
-  databaseState.circuitState = 'half_open';
+  connectionAttemptPromise = (async () => {
+    databaseState.isConnecting = true;
+    databaseState.phase = 'connecting';
+    databaseState.circuitState = 'half_open';
 
-  const databaseUrl = process.env.DATABASE_URL?.trim();
-  console.log('DB URL:', databaseUrl ? `${databaseUrl.slice(0, 30)}...` : 'not set');
+    const databaseUrl = process.env.DATABASE_URL?.trim();
+    console.log('DB URL:', databaseUrl ? `${databaseUrl.slice(0, 30)}...` : 'not set');
 
-  for (let attempt = 1; ; attempt += 1) {
-    databaseState.attempts = attempt;
+    for (let attempt = 1; ; attempt += 1) {
+      databaseState.attempts = attempt;
 
-    log('INFO', 'Attempting PostgreSQL connection', {
-      attempt,
-      timeoutMs: CONNECTION_TIMEOUT_MS,
-      ...getConnectionLogMeta(),
-    });
-
-    try {
-      const client = await withTimeout(pool.connect(), CONNECTION_TIMEOUT_MS, 'Database connection');
-
-      console.log('✅ Connected to PostgreSQL');
+      log('INFO', 'Attempting PostgreSQL connection', {
+        attempt,
+        timeoutMs: CONNECTION_TIMEOUT_MS,
+        ...getConnectionLogMeta(),
+      });
 
       try {
-        await withTimeout(
-          client.query<{ now: Date }>('SELECT NOW() AS now'),
-          CONNECTION_TIMEOUT_MS,
-          'Database query'
-        );
-      } finally {
-        client.release();
+        const client = await withTimeout(pool.connect(), CONNECTION_TIMEOUT_MS, 'Database connection');
+
+        console.log('✅ Connected to PostgreSQL');
+
+        try {
+          await withTimeout(
+            client.query<{ now: Date }>('SELECT NOW() AS now'),
+            CONNECTION_TIMEOUT_MS,
+            'Database query'
+          );
+        } finally {
+          client.release();
+        }
+
+        databaseState.isConnecting = false;
+        databaseState.isConnected = true;
+        databaseState.isReady = true;
+        databaseState.phase = 'connected';
+        databaseState.circuitState = 'closed';
+        databaseState.cooldownUntil = null;
+        databaseState.lastError = null;
+
+        log('INFO', 'PostgreSQL is ready', {
+          attempt,
+          connectedAt: databaseState.lastConnectedAt,
+        });
+
+        return true;
+      } catch (error) {
+        const normalizedError = normalizeError(error);
+        databaseState.isConnected = false;
+        databaseState.isReady = false;
+        databaseState.phase = 'failed';
+        databaseState.circuitState = 'half_open';
+        databaseState.lastError = normalizedError;
+        databaseState.consecutiveFailures += 1;
+        const retryable = isRetryableError(error);
+        const retryInMs = getRetryDelay(attempt);
+
+        console.error('❌ PostgreSQL connection error:', normalizedError);
+
+        log('WARN', 'PostgreSQL connection attempt failed', {
+          attempt,
+          retryInMs,
+          code: getErrorCode(error),
+          retryable,
+          errorMessage: normalizedError.message,
+          errorStack: normalizedError.stack,
+          ...getConnectionLogMeta(),
+        });
+
+        log('ERROR', 'PostgreSQL connection failed; retry scheduled', {
+          code: getErrorCode(error),
+          retryInMs,
+          ...normalizedError,
+          hint: isProduction
+            ? 'Verify Railway DATABASE_URL and SSL-enabled PostgreSQL access.'
+            : 'Verify local PostgreSQL env vars or provide DATABASE_URL.',
+          ...getConnectionLogMeta(),
+        });
+
+        await sleep(retryable ? retryInMs : MAX_RETRY_DELAY_MS);
       }
-
-      databaseState.isConnecting = false;
-      databaseState.isConnected = true;
-      databaseState.isReady = true;
-      databaseState.phase = 'connected';
-      databaseState.circuitState = 'closed';
-      databaseState.cooldownUntil = null;
-      databaseState.lastError = null;
-
-      log('INFO', 'PostgreSQL is ready', {
-        attempt,
-        connectedAt: databaseState.lastConnectedAt,
-      });
-
-      return true;
-    } catch (error) {
-      const normalizedError = normalizeError(error);
-      databaseState.isConnected = false;
-      databaseState.isReady = false;
-      databaseState.phase = 'failed';
-      databaseState.circuitState = 'half_open';
-      databaseState.lastError = normalizedError;
-      databaseState.consecutiveFailures += 1;
-      const retryable = isRetryableError(error);
-      const retryInMs = getRetryDelay(attempt);
-
-      console.error('❌ PostgreSQL connection error:', normalizedError);
-
-      log('WARN', 'PostgreSQL connection attempt failed', {
-        attempt,
-        retryInMs,
-        code: getErrorCode(error),
-        retryable,
-        errorMessage: normalizedError.message,
-        errorStack: normalizedError.stack,
-        ...getConnectionLogMeta(),
-      });
-
-      log('ERROR', 'PostgreSQL connection failed; retry scheduled', {
-        code: getErrorCode(error),
-        retryInMs,
-        ...normalizedError,
-        hint: isProduction
-          ? 'Verify Railway DATABASE_URL and SSL-enabled PostgreSQL access.'
-          : 'Verify local PostgreSQL env vars or provide DATABASE_URL.',
-        ...getConnectionLogMeta(),
-      });
-
-      await sleep(retryable ? retryInMs : MAX_RETRY_DELAY_MS);
     }
+  })();
+
+  try {
+    return await connectionAttemptPromise;
+  } finally {
+    connectionAttemptPromise = null;
   }
 }
 

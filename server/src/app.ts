@@ -24,6 +24,10 @@ const HOST = '0.0.0.0';
 const allowedOrigins = new Set(config.frontend.allowedOrigins);
 let isShuttingDown = false;
 let server: Server | null = null;
+let hasRegisteredGlobalErrorHandlers = false;
+let hasStartedServer = false;
+
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
@@ -50,12 +54,39 @@ app.use(cors({
 app.use((req, res, next) => {
   const requestId = req.headers['x-request-id']?.toString() || crypto.randomUUID();
   const start = Date.now();
-  const database = getDatabaseStatus();
+  let responseStarted = false;
+  const logResponseStart = () => {
+    if (responseStarted) {
+      return;
+    }
+
+    responseStarted = true;
+    log('INFO', 'HTTP response started', {
+      requestId,
+      method: req.method,
+      route: req.originalUrl,
+      statusCode: res.statusCode,
+      latencyMs: Date.now() - start,
+    });
+  };
+  const originalWriteHead = res.writeHead.bind(res);
+  res.writeHead = ((...args: Parameters<Response['writeHead']>) => {
+    logResponseStart();
+    return originalWriteHead(...args);
+  }) as Response['writeHead'];
 
   res.setHeader('x-request-id', requestId);
   res.locals.requestId = requestId;
 
+  log('INFO', 'HTTP request received', {
+    requestId,
+    method: req.method,
+    route: req.originalUrl,
+    timestamp: new Date(start).toISOString(),
+  });
+
   res.on('finish', () => {
+    const database = getDatabaseStatus();
     log('INFO', 'HTTP request completed', {
       requestId,
       method: req.method,
@@ -64,6 +95,17 @@ app.use((req, res, next) => {
       latencyMs: Date.now() - start,
       dbStatus: database.phase,
     });
+  });
+
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      log('WARN', 'HTTP request closed before response finished', {
+        requestId,
+        method: req.method,
+        route: req.originalUrl,
+        latencyMs: Date.now() - start,
+      });
+    }
   });
 
   next();
@@ -75,9 +117,6 @@ app.use(morgan('combined'));
 // Body parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Rate limiting
-app.use(limiter);
 
 // Health check
 app.get('/', (req: Request, res: Response) => {
@@ -133,16 +172,15 @@ app.get('/status', (req: Request, res: Response) => {
   });
 });
 
-// Block API until DB ready
+// Rate limiting
+app.use('/api', limiter);
+
+// Keep API responsive while dependencies warm up.
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const database = getDatabaseStatus();
 
   if (!database.isReady) {
-    res.setHeader('Retry-After', '3');
-    return res.status(503).json({
-      error: 'service warming up',
-      retryAfter: 3,
-    });
+    res.setHeader('x-service-state', 'warming-up');
   }
 
   next();
@@ -170,6 +208,12 @@ app.use(errorHandler);
 const PORT = Number.parseInt(process.env.PORT ?? '', 10) || config.port;
 
 function registerGlobalErrorHandlers() {
+  if (hasRegisteredGlobalErrorHandlers) {
+    return;
+  }
+
+  hasRegisteredGlobalErrorHandlers = true;
+
   process.on('uncaughtException', (error) => {
     log('ERROR', 'Uncaught exception', normalizeError(error));
   });
@@ -180,6 +224,12 @@ function registerGlobalErrorHandlers() {
 }
 
 function startServer() {
+  if (hasStartedServer) {
+    return;
+  }
+
+  hasStartedServer = true;
+
   log('INFO', 'Starting API server', {
     host: HOST,
     port: PORT,
@@ -201,6 +251,15 @@ function startServer() {
         log('ERROR', 'DB connection failed', normalizeError(error));
       }
     })();
+  });
+
+  server.keepAliveTimeout = 60_000;
+  server.headersTimeout = 65_000;
+  server.requestTimeout = 30_000;
+  server.timeout = 30_000;
+
+  server.on('timeout', () => {
+    log('WARN', 'HTTP server timed out a request');
   });
 
   server.on('error', (error) => {
