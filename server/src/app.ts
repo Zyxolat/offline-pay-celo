@@ -195,6 +195,11 @@ app.use('/api/queue', queueRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Health / debug endpoint (MUST be before 404)
+app.get("/ping", (req: Request, res: Response) => {
+  res.status(200).send("pong");
+});
+
 // 404
 app.use((req: Request, res: Response) => {
   res.status(404).json({
