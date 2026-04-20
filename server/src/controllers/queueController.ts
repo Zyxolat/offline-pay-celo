@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { queueService } from '../services/queueService.js';
+import { normalizeError } from '../utils/logger.js';
 import { successResponse, errorResponse } from '../utils/validators.js';
 
 export const queueController = {
@@ -20,8 +21,9 @@ export const queueController = {
 
       successResponse(res, result, 201);
     } catch (error) {
-      console.error('Add to queue error:', error);
-      errorResponse(res, `Failed to queue transaction: ${error}`, 400);
+      const normalizedError = normalizeError(error);
+      console.error('Add to queue error:', normalizedError);
+      errorResponse(res, `Failed to queue transaction: ${normalizedError.message}`, 400);
     }
   },
 
@@ -34,7 +36,7 @@ export const queueController = {
       const result = await queueService.getPendingQueue(req.user.userId);
       successResponse(res, result);
     } catch (error) {
-      console.error('Get pending queue error:', error);
+      console.error('Get pending queue error:', normalizeError(error));
       errorResponse(res, 'Failed to fetch pending transactions', 500);
     }
   },
@@ -50,7 +52,7 @@ export const queueController = {
       const result = await queueService.syncQueue(req.user.userId, queueIds);
       successResponse(res, result);
     } catch (error) {
-      console.error('Sync queue error:', error);
+      console.error('Sync queue error:', normalizeError(error));
       errorResponse(res, 'Failed to sync transactions', 500);
     }
   },

@@ -1,6 +1,7 @@
 import { TransactionModel } from '../models/Transaction.js';
 import { UserModel } from '../models/User.js';
 import { celoService } from './celoService.js';
+import { normalizeError } from '../utils/logger.js';
 
 export const transactionService = {
   async createPayment(
@@ -81,7 +82,7 @@ export const transactionService = {
         confirmations: 0,
       };
     } catch (error) {
-      throw new Error(`Failed to submit transaction: ${error}`);
+      throw new Error(`Failed to submit transaction: ${normalizeError(error).message}`);
     }
   },
 

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { UserModel } from '../models/User.js';
+import { normalizeError } from '../utils/logger.js';
 import { successResponse, errorResponse } from '../utils/validators.js';
 
 export const transactionController = {
@@ -38,7 +39,7 @@ export const transactionController = {
         note: tx.note,
       });
     } catch (error) {
-      console.error('Get transaction detail error:', error);
+      console.error('Get transaction detail error:', normalizeError(error));
       errorResponse(res, 'Failed to fetch transaction', 500);
     }
   },
@@ -67,7 +68,7 @@ export const transactionController = {
 
       successResponse(res, { transactions: results });
     } catch (error) {
-      console.error('Get batch status error:', error);
+      console.error('Get batch status error:', normalizeError(error));
       errorResponse(res, 'Failed to fetch transaction status', 500);
     }
   },

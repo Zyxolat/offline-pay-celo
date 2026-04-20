@@ -2,6 +2,7 @@ import { Decimal } from 'decimal.js';
 import qrcode from 'qrcode';
 import { UserModel } from '../models/User.js';
 import { TransactionModel } from '../models/Transaction.js';
+import { normalizeError } from '../utils/logger.js';
 import { celoService } from './celoService.js';
 
 const WITHDRAW_MINIMUMS = {
@@ -161,9 +162,10 @@ export const walletService = {
         amount: normalizedAmount.toFixed(),
         status: 'submitted',
       };
-    } catch (error: any) {
+    } catch (error) {
+      const normalizedError = normalizeError(error);
       await TransactionModel.updateStatus(transaction.id, 'failed');
-      throw new Error(error?.message || 'Failed to broadcast withdrawal');
+      throw new Error(normalizedError.message || 'Failed to broadcast withdrawal');
     }
   },
 };

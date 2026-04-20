@@ -4,6 +4,7 @@ import { AuthSessionModel } from '../models/AuthSession.js';
 import { UserModel } from '../models/User.js';
 import { AuthRequest, authMiddleware } from '../middleware/auth.js';
 import { tokenService } from '../services/tokenService.js';
+import { normalizeError } from '../utils/logger.js';
 
 const router = Router();
 
@@ -31,7 +32,7 @@ const adminMiddleware = async (req: AuthRequest, res: Response, next: NextFuncti
     await AuthSessionModel.touch(activeSessionToken);
     next();
   } catch (error) {
-    console.error('Admin middleware error:', error);
+    console.error('Admin middleware error:', normalizeError(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -84,7 +85,7 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Admin login error:', error);
+    console.error('Admin login error:', normalizeError(error));
     return res.status(500).json({ error: 'Failed to log in as admin' });
   }
 });
@@ -146,7 +147,7 @@ router.get('/stats', authMiddleware, adminMiddleware, async (_req: AuthRequest, 
       },
     });
   } catch (error) {
-    console.error('Admin stats error:', error);
+    console.error('Admin stats error:', normalizeError(error));
     res.status(500).json({ error: 'Failed to fetch admin statistics' });
   }
 });
@@ -196,7 +197,7 @@ router.get('/users', authMiddleware, adminMiddleware, async (req: AuthRequest, r
       },
     });
   } catch (error) {
-    console.error('Admin users error:', error);
+    console.error('Admin users error:', normalizeError(error));
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -242,7 +243,7 @@ router.get('/transactions', authMiddleware, adminMiddleware, async (req: AuthReq
       },
     });
   } catch (error) {
-    console.error('Admin transactions error:', error);
+    console.error('Admin transactions error:', normalizeError(error));
     res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 });
@@ -286,7 +287,7 @@ router.get('/wallets', authMiddleware, adminMiddleware, async (req: AuthRequest,
       },
     });
   } catch (error) {
-    console.error('Admin wallets error:', error);
+    console.error('Admin wallets error:', normalizeError(error));
     res.status(500).json({ error: 'Failed to fetch wallets' });
   }
 });

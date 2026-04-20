@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
+import { normalizeError } from '../utils/logger.js';
 
 export interface TokenPayload {
   userId: string;
@@ -22,7 +23,7 @@ export const tokenService = {
       const decoded = jwt.verify(token, config.jwt.secret) as TokenPayload;
       return decoded;
     } catch (error) {
-      console.error('Token verification failed:', error);
+      console.error('Token verification failed:', normalizeError(error));
       return null;
     }
   },

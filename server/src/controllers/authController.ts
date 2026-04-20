@@ -14,6 +14,7 @@ import { config } from '../config/index.js';
 import { webauthnConfig } from '../config/webauthn.js';
 import { tokenService } from '../services/tokenService.js';
 import { celoService } from '../services/celoService.js';
+import { normalizeError } from '../utils/logger.js';
 import { errorResponse, successResponse, validateEmail } from '../utils/validators.js';
 
 const googleClient = new OAuth2Client(config.google.clientId || undefined);
@@ -145,7 +146,7 @@ export const authController = {
         user: buildSessionUser(user),
       });
     } catch (error) {
-      console.error('Google auth error:', error);
+      console.error('Google auth error:', normalizeError(error));
       errorResponse(res, 'Google authentication failed', 401);
     }
   },
@@ -179,7 +180,7 @@ export const authController = {
 
       successResponse(res, options);
     } catch (error) {
-      console.error('Passkey registration options error:', error);
+      console.error('Passkey registration options error:', normalizeError(error));
       errorResponse(res, 'Failed to generate passkey registration options', 500);
     }
   },
@@ -251,8 +252,9 @@ export const authController = {
         201
       );
     } catch (error) {
+      const normalizedError = normalizeError(error);
       console.error('Passkey registration verify error:', {
-        error,
+        error: normalizedError,
         requestOrigin: req.headers.origin,
         credentialOrigin: getCredentialResponseOrigin(req.body?.credential),
         expectedOrigins: getExpectedOrigins(req.headers.origin, req.body?.credential),
@@ -289,7 +291,7 @@ export const authController = {
 
       successResponse(res, options);
     } catch (error) {
-      console.error('Passkey login options error:', error);
+      console.error('Passkey login options error:', normalizeError(error));
       errorResponse(res, 'Failed to generate passkey login options', 500);
     }
   },
@@ -344,8 +346,9 @@ export const authController = {
         user: buildSessionUser(user),
       });
     } catch (error) {
+      const normalizedError = normalizeError(error);
       console.error('Passkey login verify error:', {
-        error,
+        error: normalizedError,
         requestOrigin: req.headers.origin,
         credentialOrigin: getCredentialResponseOrigin(req.body?.credential),
         expectedOrigins: getExpectedOrigins(req.headers.origin, req.body?.credential),
@@ -362,7 +365,7 @@ export const authController = {
       }
       successResponse(res, { message: 'Logged out successfully' });
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Logout error:', normalizeError(error));
       errorResponse(res, 'Logout failed', 500);
     }
   },

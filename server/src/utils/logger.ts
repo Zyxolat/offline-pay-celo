@@ -1,5 +1,10 @@
 type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 
+export type NormalizedError = {
+  message: string;
+  stack: string | undefined;
+};
+
 function formatMeta(meta?: Record<string, unknown>) {
   return meta && Object.keys(meta).length > 0 ? meta : undefined;
 }
@@ -27,14 +32,13 @@ export function log(level: LogLevel, message: string, meta?: Record<string, unkn
   console.log(line);
 }
 
-export function serializeError(error: unknown) {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-  }
+export function normalizeError(error: unknown): NormalizedError {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  };
+}
 
-  return { message: String(error) };
+export function serializeError(error: unknown): NormalizedError {
+  return normalizeError(error);
 }

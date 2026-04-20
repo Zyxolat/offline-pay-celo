@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { config } from '../config/index.js';
+import { normalizeError } from '../utils/logger.js';
 
 const provider = new ethers.JsonRpcProvider(config.celo.rpcUrl);
 
@@ -39,7 +40,7 @@ export const celoService = {
         cUSD: cUSDFormatted,
       };
     } catch (error) {
-      console.error('Error fetching balance:', error);
+      console.error('Error fetching balance:', normalizeError(error));
       return { CELO: '0', cUSD: '0' };
     }
   },
@@ -66,7 +67,7 @@ export const celoService = {
       }
       return '0.001'; // Default estimate
     } catch (error) {
-      console.error('Error estimating gas:', error);
+      console.error('Error estimating gas:', normalizeError(error));
       return '0.001';
     }
   },
@@ -84,7 +85,7 @@ export const celoService = {
         confirmations,
       };
     } catch (error) {
-      console.error('Error getting transaction status:', error);
+      console.error('Error getting transaction status:', normalizeError(error));
       return null;
     }
   },
@@ -94,8 +95,9 @@ export const celoService = {
       const response = await provider.broadcastTransaction(signedTx);
       return response.hash;
     } catch (error) {
-      console.error('Error submitting transaction:', error);
-      throw new Error(`Failed to submit transaction: ${error}`);
+      const normalizedError = normalizeError(error);
+      console.error('Error submitting transaction:', normalizedError);
+      throw new Error(`Failed to submit transaction: ${normalizedError.message}`);
     }
   },
 

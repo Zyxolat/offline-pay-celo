@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { transactionService } from '../services/transactionService.js';
 import { ChallengeModel } from '../models/Challenge.js';
 import { celoService } from '../services/celoService.js';
+import { normalizeError } from '../utils/logger.js';
 import { successResponse, errorResponse, validateAddress, validateAmount } from '../utils/validators.js';
 import { randomBytes } from 'crypto';
 
@@ -56,8 +57,9 @@ export const paymentController = {
         },
       });
     } catch (error) {
-      console.error('Authorize challenge error:', error);
-      errorResponse(res, `Failed to authorize payment: ${error}`, 400);
+      const normalizedError = normalizeError(error);
+      console.error('Authorize challenge error:', normalizedError);
+      errorResponse(res, `Failed to authorize payment: ${normalizedError.message}`, 400);
     }
   },
 
@@ -88,7 +90,7 @@ export const paymentController = {
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error) {
-      console.error('Authorize verify error:', error);
+      console.error('Authorize verify error:', normalizeError(error));
       errorResponse(res, 'Failed to verify authorization', 400);
     }
   },
@@ -123,8 +125,9 @@ export const paymentController = {
         successResponse(res, result);
       }
     } catch (error) {
-      console.error('Submit payment error:', error);
-      errorResponse(res, `Failed to submit payment: ${error}`, 400);
+      const normalizedError = normalizeError(error);
+      console.error('Submit payment error:', normalizedError);
+      errorResponse(res, `Failed to submit payment: ${normalizedError.message}`, 400);
     }
   },
 };

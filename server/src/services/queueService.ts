@@ -1,6 +1,7 @@
 import { OfflineQueueModel } from '../models/OfflineQueue.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { celoService } from './celoService.js';
+import { normalizeError } from '../utils/logger.js';
 
 export const queueService = {
   async addToQueue(userId: string, signedTx: string, transactionId?: string): Promise<any> {
@@ -67,6 +68,7 @@ export const queueService = {
 
         synced++;
       } catch (error) {
+        const normalizedError = normalizeError(error);
         failed++;
         await OfflineQueueModel.incrementAttempts(item.id);
 
@@ -76,7 +78,7 @@ export const queueService = {
           await OfflineQueueModel.updateStatus(
             item.id,
             'failed',
-            `Failed after ${updatedItem.attempts} attempts: ${error}`
+            `Failed after ${updatedItem.attempts} attempts: ${normalizedError.message}`
           );
         }
       }

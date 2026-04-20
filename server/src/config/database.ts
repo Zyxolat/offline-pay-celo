@@ -1,6 +1,6 @@
 import pkg from 'pg';
 import { config } from './index.js';
-import { log, serializeError } from '../utils/logger.js';
+import { log, normalizeError, serializeError } from '../utils/logger.js';
 
 const { Pool } = pkg;
 const CONNECTION_TIMEOUT_MS = 10000;
@@ -106,13 +106,14 @@ function getConnectionLogMeta() {
 }
 
 pool.on('error', (error: Error & { code?: string }) => {
+  const normalizedError = normalizeError(error);
   databaseState.isConnected = false;
   databaseState.isReady = false;
   databaseState.phase = 'failed';
-  databaseState.lastError = serializeError(error);
+  databaseState.lastError = normalizedError;
 
   log('ERROR', 'Unexpected PostgreSQL pool error', {
-    ...serializeError(error),
+    ...normalizedError,
     ...(error.code ? { code: error.code } : {}),
     ...getConnectionLogMeta(),
   });
@@ -207,32 +208,32 @@ export async function connectDatabaseWithRetry() {
 
       return true;
     } catch (error) {
+      const normalizedError = normalizeError(error);
       databaseState.isConnected = false;
       databaseState.isReady = false;
       databaseState.phase = 'failed';
       databaseState.circuitState = 'half_open';
-      databaseState.lastError = serializeError(error);
+      databaseState.lastError = normalizedError;
       databaseState.consecutiveFailures += 1;
       const retryable = isRetryableError(error);
       const retryInMs = getRetryDelay(attempt);
 
-      console.error(
-        '❌ PostgreSQL connection error:',
-        error instanceof Error ? error.message : String(error)
-      );
+      console.error('❌ PostgreSQL connection error:', normalizedError);
 
       log('WARN', 'PostgreSQL connection attempt failed', {
         attempt,
         retryInMs,
         code: getErrorCode(error),
         retryable,
-        error: serializeError(error),
+        errorMessage: normalizedError.message,
+        errorStack: normalizedError.stack,
         ...getConnectionLogMeta(),
       });
 
       log('ERROR', 'PostgreSQL connection failed; retry scheduled', {
         code: getErrorCode(error),
         retryInMs,
+        ...normalizedError,
         hint: isProduction
           ? 'Verify Railway DATABASE_URL and SSL-enabled PostgreSQL access.'
           : 'Verify local PostgreSQL env vars or provide DATABASE_URL.',

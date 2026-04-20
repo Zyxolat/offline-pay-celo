@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { normalizeError } from '../utils/logger.js';
 
 export interface ApiError extends Error {
   status?: number;
@@ -6,7 +7,12 @@ export interface ApiError extends Error {
 }
 
 export const errorHandler = (err: ApiError, req: Request, res: Response, next: NextFunction) => {
-  console.error('[ERROR]', err);
+  console.error('[ERROR]', {
+    ...normalizeError(err),
+    details: err.details,
+    path: req.originalUrl,
+    method: req.method,
+  });
 
   const status = err.status || 500;
   const message = err.message || 'Internal server error';
