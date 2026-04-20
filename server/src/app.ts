@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
 import type { Server } from 'node:http';
+import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -206,6 +207,9 @@ app.use((req: Request, res: Response) => {
 app.use(errorHandler);
 
 const PORT = Number.parseInt(process.env.PORT ?? '', 10) || config.port;
+const serverBootstrapState = globalThis as typeof globalThis & {
+  __server_started__?: boolean;
+};
 
 function registerGlobalErrorHandlers() {
   if (hasRegisteredGlobalErrorHandlers) {
@@ -223,9 +227,9 @@ function registerGlobalErrorHandlers() {
   });
 }
 
-function startServer() {
+export function startServer() {
   if (hasStartedServer) {
-    return;
+    return server;
   }
 
   hasStartedServer = true;
@@ -267,6 +271,8 @@ function startServer() {
 
     process.exit(1);
   });
+
+  return server;
 }
 
 // Graceful shutdown
@@ -302,10 +308,33 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
   }
 }
 
-registerGlobalErrorHandlers();
-startServer();
-
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
+
+function shouldAutoStart() {
+  const entryArg = process.argv[1];
+
+  if (!entryArg) {
+    return false;
+  }
+
+  return import.meta.url === pathToFileURL(entryArg).href;
+}
+
+export function bootServer() {
+  registerGlobalErrorHandlers();
+
+  if (serverBootstrapState.__server_started__) {
+    console.log('Server already started - skipping duplicate init');
+    return server;
+  }
+
+  serverBootstrapState.__server_started__ = true;
+  return startServer();
+}
+
+if (shouldAutoStart()) {
+  bootServer();
+}
 
 export default app;

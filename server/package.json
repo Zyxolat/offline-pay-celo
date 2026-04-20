@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "ts-node --esm src/app.ts",
     "build": "tsc && node ./scripts/verify-build.mjs",
-    "start": "node index.js",
+    "start": "node dist/app.js",
     "migrate": "ts-node --esm migrations/run.ts"
   },
   "keywords": [
