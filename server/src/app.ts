@@ -175,15 +175,21 @@ function startServer() {
   });
 
   server = app.listen(PORT, '0.0.0.0', () => {
-    log('INFO', 'API server is listening', {
-      host: HOST,
-      port: PORT,
-      environment: config.nodeEnv,
-      celoNetwork: config.celo.network,
-    });
-
-    void connectDatabaseWithRetry();
+  log('INFO', 'API server is listening', {
+    host: HOST,
+    port: PORT,
+    environment: config.nodeEnv,
+    celoNetwork: config.celo.network,
   });
+
+  void (async () => {
+    try {
+      await connectDatabaseWithRetry();
+    } catch (err) {
+      log('ERROR', 'DB connection failed', err);
+    }
+  })();
+});
 
   server.on('error', (error) => {
     log('ERROR', 'HTTP server failed to start', serializeError(error));
