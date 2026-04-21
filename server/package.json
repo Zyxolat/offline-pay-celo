@@ -8,10 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "ts-node --esm src/app.ts",
+    "dev": "node --loader ts-node/esm src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
-    "migrate": "ts-node --esm migrations/run.ts"
+    "migrate": "node dist/migrations/run.js"
   },
   "keywords": [
     "celo",

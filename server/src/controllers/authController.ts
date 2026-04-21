@@ -16,7 +16,7 @@ import { config } from '../config/index.js';
 import { webauthnConfig } from '../config/webauthn.js';
 import { tokenService } from '../services/tokenService.js';
 import { celoService } from '../services/celoService.js';
-import { normalizeError } from '../utils/logger.js';
+import { log, normalizeError } from '../utils/logger.js';
 import { errorResponse, successResponse, validateWithSchema } from '../utils/validators.js';
 
 const googleClient = new OAuth2Client(config.google.clientId || undefined);
@@ -153,6 +153,59 @@ const getExpectedOrigins = (
   return Array.from(origins);
 };
 
+const logWebauthnVerificationContext = (
+  stage: 'registration' | 'authentication',
+  requestOrigin?: string,
+  credential?: { response?: { clientDataJSON?: string } }
+) => {
+  const credentialOrigin = getCredentialResponseOrigin(credential);
+  const expectedOrigins = getExpectedOrigins(requestOrigin, credential);
+  const rpIdMatchesOriginHost = parseOriginHost(config.webauthn.origin) === config.webauthn.rpID;
+  const requestOriginMatches = requestOrigin ? expectedOrigins.includes(requestOrigin) : undefined;
+  const credentialOriginMatches = credentialOrigin
+    ? expectedOrigins.includes(credentialOrigin)
+    : undefined;
+
+  log('INFO', 'WebAuthn verification context', {
+    stage,
+    requestOrigin,
+    credentialOrigin,
+    expectedOrigins,
+    configuredOrigin: config.webauthn.origin,
+    configuredRpId: config.webauthn.rpID,
+    rpIdMatchesOriginHost,
+    requestOriginMatches,
+    credentialOriginMatches,
+  });
+
+  if (!rpIdMatchesOriginHost) {
+    log('WARN', 'WebAuthn RP ID does not match configured origin host', {
+      configuredOrigin: config.webauthn.origin,
+      configuredRpId: config.webauthn.rpID,
+    });
+  }
+
+  if (requestOrigin && !requestOriginMatches) {
+    log('WARN', 'WebAuthn request Origin header does not match configured origins', {
+      stage,
+      requestOrigin,
+      expectedOrigins,
+      configuredRpId: config.webauthn.rpID,
+    });
+  }
+
+  if (credentialOrigin && !credentialOriginMatches) {
+    log('WARN', 'WebAuthn credential origin does not match configured origins', {
+      stage,
+      credentialOrigin,
+      expectedOrigins,
+      configuredRpId: config.webauthn.rpID,
+    });
+  }
+
+  return expectedOrigins;
+};
+
 export const authController = {
   async google(req: AuthRequest, res: Response) {
     try {
@@ -160,6 +213,12 @@ export const authController = {
       if (!authPayload) {
         return;
       }
+
+      log('INFO', 'Verifying Google ID token', {
+        route: req.originalUrl,
+        hasGoogleClientId: Boolean(config.google.clientId),
+        requestOrigin: req.headers.origin,
+      });
 
       const ticket = await googleClient.verifyIdToken({
         idToken: authPayload.idToken,
@@ -200,6 +259,12 @@ export const authController = {
       console.log('Signup request received', {
         route: req.originalUrl,
         origin: req.headers.origin,
+      });
+      log('INFO', 'Generating WebAuthn registration options', {
+        route: req.originalUrl,
+        requestOrigin: req.headers.origin,
+        configuredOrigin: config.webauthn.origin,
+        configuredRpId: config.webauthn.rpID,
       });
 
       const payload = validateWithSchema(res, passkeyEmailSchema, req.body);
@@ -256,7 +321,11 @@ export const authController = {
         return errorResponse(res, 'Registration challenge expired', 400);
       }
 
-      const expectedOrigins = getExpectedOrigins(req.headers.origin, credential);
+      const expectedOrigins = logWebauthnVerificationContext(
+        'registration',
+        req.headers.origin,
+        credential
+      );
 
       const verification = (await webauthnConfig.verifyRegistrationResponse({
         response: credential,
@@ -377,7 +446,11 @@ export const authController = {
         return errorResponse(res, 'Authentication challenge expired', 400);
       }
 
-      const expectedOrigins = getExpectedOrigins(req.headers.origin, credential);
+      const expectedOrigins = logWebauthnVerificationContext(
+        'authentication',
+        req.headers.origin,
+        credential
+      );
 
       const verification = (await webauthnConfig.verifyAuthenticationResponse({
         response: credential,

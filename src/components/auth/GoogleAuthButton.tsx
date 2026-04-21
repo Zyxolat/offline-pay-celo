@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { GOOGLE_CLIENT_ID } from '@/config/env';
 
 declare global {
   interface Window {
@@ -60,7 +61,7 @@ export const GoogleAuthButton = ({ onCredential, text = 'continue_with' }: Googl
       return;
     }
 
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const clientId = GOOGLE_CLIENT_ID;
     if (!clientId) {
       return;
     }

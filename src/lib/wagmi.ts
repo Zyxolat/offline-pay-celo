@@ -2,18 +2,24 @@ import { createConfig, http } from "wagmi";
 import { celoAlfajores, celo } from "wagmi/chains";
 import { injected, walletConnect } from "wagmi/connectors";
 
+import { getWalletConnectProjectId } from "@/config/env";
 import { isInjectedAvailable, isMiniPay } from "@/lib/wallet";
 
-const WALLETCONNECT_PROJECT_ID = "9837d116c1ffcee9874d5614c7ceef10";
+const walletConnectProjectId = getWalletConnectProjectId();
+const connectors = [
+  injected(),
+  ...(walletConnectProjectId
+    ? [
+        walletConnect({
+          projectId: walletConnectProjectId,
+        }),
+      ]
+    : []),
+];
 
 export const config = createConfig({
   chains: [celoAlfajores, celo],
-  connectors: [
-    injected(),
-    walletConnect({
-      projectId: WALLETCONNECT_PROJECT_ID,
-    }),
-  ],
+  connectors,
   transports: {
     [celoAlfajores.id]: http(),
     [celo.id]: http(),

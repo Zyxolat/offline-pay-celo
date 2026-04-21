@@ -8,141 +8,6 @@ const __dirname = path.dirname(__filename);
 const serverRoot = path.join(__dirname, '../..');
 
 dotenv.config({ path: path.join(serverRoot, '.env') });
-const configWarnings: string[] = [];
-
-function warnConfig(message: string, meta?: Record<string, unknown>) {
-  configWarnings.push(message);
-  log('WARN', message, meta);
-}
-
-function parsePort(value: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function isProduction(): boolean {
-  return process.env.NODE_ENV === 'production';
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    warnConfig('Missing required environment variable; using fallback', { name });
-    return '';
-  }
-
-  return value;
-}
-
-function normalizeOrigin(value: string): string {
-  return value.trim().replace(/\/+$/, '');
-}
-
-function tryParseOrigin(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    return null;
-  }
-}
-
-function getFrontendOrigins(): string[] {
-  const rawValue = process.env.FRONTEND_URL?.trim();
-  const isProd = isProduction();
-  const rawOrigins = rawValue
-    ? rawValue.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean)
-    : isProd
-      ? []
-      : ['http://localhost:5173'];
-
-  const validOrigins: string[] = [];
-
-  for (const origin of rawOrigins) {
-    const parsed = tryParseOrigin(origin);
-
-    if (!parsed) {
-      log('WARN', 'Ignoring malformed FRONTEND_URL origin', { origin });
-      continue;
-    }
-
-    validOrigins.push(parsed.origin);
-  }
-
-  if (validOrigins.length === 0) {
-    const webauthnFallback = process.env.WEBAUTHN_ORIGIN?.trim();
-    const parsedFallback = webauthnFallback ? tryParseOrigin(normalizeOrigin(webauthnFallback)) : null;
-
-    if (parsedFallback) {
-      log('WARN', 'No valid FRONTEND_URL origins found; falling back to WEBAUTHN_ORIGIN', {
-        fallbackOrigin: parsedFallback.origin,
-      });
-      return [parsedFallback.origin];
-    }
-
-    if (isProd) {
-      warnConfig('FRONTEND_URL is missing or invalid in production');
-      return [];
-    }
-
-    log('WARN', 'No valid FRONTEND_URL origins found; falling back to localhost only');
-    return ['http://localhost:5173'];
-  }
-
-  return [...new Set(validOrigins)];
-}
-
-export function isAllowedVercelOrigin(origin: string) {
-  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
-}
-
-function getWebauthnOrigin(frontendOrigin: string): string {
-  const rawValue = process.env.WEBAUTHN_ORIGIN?.trim();
-  const isDevDefault =
-    !rawValue ||
-    rawValue === 'http://localhost:5173' ||
-    rawValue === 'http://127.0.0.1:5173';
-  const value = normalizeOrigin(
-    isProduction() && isDevDefault ? frontendOrigin : (rawValue || frontendOrigin).trim()
-  );
-  const parsed = tryParseOrigin(value);
-
-  if (!parsed) {
-    warnConfig('WEBAUTHN_ORIGIN is invalid; falling back to frontend origin', { value });
-    return frontendOrigin;
-  }
-
-  if (isProduction() && parsed.protocol !== 'https:') {
-    warnConfig('WEBAUTHN_ORIGIN must use https:// in production; falling back to frontend origin', {
-      value,
-    });
-    return frontendOrigin;
-  }
-
-  return parsed.origin;
-}
-
-function getJwtSecret(): string {
-  const fallback = 'offlinepay-dev-secret-change-me';
-  const value = (process.env.JWT_SECRET || fallback).trim();
-
-  if (isProduction() && value === fallback) {
-    warnConfig('JWT_SECRET is using the development fallback in production');
-  }
-
-  return value;
-}
-
-function getAdminPassword(): string {
-  const fallback = 'admin123';
-  const value = (process.env.ADMIN_PASSWORD || fallback).trim();
-
-  if (isProduction() && value === fallback) {
-    warnConfig('ADMIN_PASSWORD is using the development fallback in production');
-  }
-
-  return value;
-}
 
 type DatabaseConfig = {
   url?: string;
@@ -157,56 +22,183 @@ type DatabaseConfig = {
   };
 };
 
-function parseDatabaseUrl(value: string): URL | null {
-  let parsed: URL;
+const configWarnings: string[] = [];
+const configErrors: string[] = [];
 
-  try {
-    parsed = new URL(value);
-  } catch {
-    warnConfig('DATABASE_URL is invalid; database connection will rely on fallback settings', {
-      valuePreview: value.slice(0, 30),
-    });
-    return null;
+function warnConfig(message: string, meta?: Record<string, unknown>) {
+  configWarnings.push(message);
+  log('WARN', message, meta);
+}
+
+function failConfig(message: string, meta?: Record<string, unknown>): never {
+  configErrors.push(message);
+  log('ERROR', message, meta);
+  throw new Error(message);
+}
+
+function parsePort(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+function requireEnv(name: string, options: { allowInDevFallback?: string } = {}): string {
+  const value = process.env[name]?.trim();
+
+  if (value) {
+    return value;
   }
 
-  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
-    warnConfig('DATABASE_URL must use postgres protocol; database connection will rely on fallback settings', {
-      protocol: parsed.protocol,
-    });
+  if (!isProduction() && options.allowInDevFallback !== undefined) {
+    return options.allowInDevFallback;
+  }
+
+  return failConfig(`Missing required environment variable ${name}`, {
+    environment: process.env.NODE_ENV || 'development',
+  });
+}
+
+function getOptionalEnv(name: string): string | undefined {
+  return process.env[name]?.trim() || undefined;
+}
+
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function tryParseOrigin(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
     return null;
+  }
+}
+
+function parseOrigin(name: string, value: string, options: { requireHttpsInProduction?: boolean } = {}) {
+  const normalized = normalizeOrigin(value);
+  const parsed = tryParseOrigin(normalized);
+
+  if (!parsed) {
+    return failConfig(`${name} must be a valid absolute URL`, {
+      value,
+    });
+  }
+
+  if (options.requireHttpsInProduction && isProduction() && parsed.protocol !== 'https:') {
+    return failConfig(`${name} must use https:// in production`, {
+      value: normalized,
+    });
+  }
+
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    return failConfig(`${name} must not include a path, query string, or hash`, {
+      value: normalized,
+    });
   }
 
   return parsed;
 }
 
-function getDatabaseConfig() {
-  const databaseUrl = process.env.DATABASE_URL?.trim();
-  const isProd = isProduction();
+function getFrontendOrigins() {
+  const frontendUrl = requireEnv('FRONTEND_URL', {
+    allowInDevFallback: 'http://localhost:5173',
+  });
+  const parsedOrigins = frontendUrl
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => parseOrigin('FRONTEND_URL', origin, { requireHttpsInProduction: true }));
 
-  if (isProd) {
+  const uniqueOrigins = [...new Set(parsedOrigins.map((origin) => origin.origin))];
+
+  if (isProduction() && uniqueOrigins.length !== 1) {
+    failConfig('FRONTEND_URL must contain exactly one production frontend origin', {
+      configuredOrigins: uniqueOrigins,
+    });
+  }
+
+  return uniqueOrigins;
+}
+
+function getJwtSecret() {
+  return requireEnv('JWT_SECRET');
+}
+
+function getAdminEmail() {
+  const email = requireEnv('ADMIN_EMAIL', {
+    allowInDevFallback: 'admin@offlinepay.local',
+  });
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    failConfig('ADMIN_EMAIL must be a valid email address', {
+      value: email,
+    });
+  }
+
+  return email;
+}
+
+function getAdminPassword() {
+  const password = requireEnv('ADMIN_PASSWORD', {
+    allowInDevFallback: 'admin123',
+  });
+
+  if (isProduction() && password.length < 12) {
+    failConfig('ADMIN_PASSWORD must be at least 12 characters in production');
+  }
+
+  return password;
+}
+
+function parseDatabaseUrl(value: string): URL {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    return failConfig('DATABASE_URL must be a valid Postgres connection string', {
+      valuePreview: value.slice(0, 30),
+    });
+  }
+
+  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
+    return failConfig('DATABASE_URL must use the postgres:// or postgresql:// protocol', {
+      protocol: parsed.protocol,
+    });
+  }
+
+  return parsed;
+}
+
+function getDatabaseConfig(): DatabaseConfig {
+  const databaseUrl = getOptionalEnv('DATABASE_URL');
+
+  if (isProduction()) {
     const requiredUrl = requireEnv('DATABASE_URL');
-    const parsed = requiredUrl ? parseDatabaseUrl(requiredUrl) : null;
+    const parsed = parseDatabaseUrl(requiredUrl);
 
-    if (parsed && /^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
-      warnConfig('DATABASE_URL points to localhost in production; database may be unreachable', {
+    if (/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
+      failConfig('DATABASE_URL cannot point to localhost in production', {
         hostname: parsed.hostname,
       });
     }
 
     return {
-      url: parsed ? requiredUrl : undefined,
-      ssl: Boolean(parsed),
+      url: requiredUrl,
+      ssl: true,
       source: 'database_url',
     };
   }
 
   if (databaseUrl) {
-    const parsed = parseDatabaseUrl(databaseUrl);
-
+    parseDatabaseUrl(databaseUrl);
     return {
-      url: parsed ? databaseUrl : undefined,
+      url: databaseUrl,
       ssl: false,
-      source: parsed ? 'database_url' : 'local',
+      source: 'database_url',
     };
   }
 
@@ -222,26 +214,50 @@ function getDatabaseConfig() {
       password: process.env.PGPASSWORD ?? process.env.DB_PASSWORD,
       database: process.env.PGDATABASE?.trim() || process.env.DB_NAME?.trim(),
     },
-  } satisfies DatabaseConfig;
+  };
 }
 
 const frontendOrigins = getFrontendOrigins();
-const primaryFrontendOrigin = frontendOrigins[0] || 'http://localhost:5173';
-const webauthnOrigin = getWebauthnOrigin(primaryFrontendOrigin);
+const primaryFrontendOrigin = frontendOrigins[0];
+const frontendOriginUrl = parseOrigin('FRONTEND_URL', primaryFrontendOrigin, {
+  requireHttpsInProduction: true,
+});
+const webauthnOriginValue = requireEnv('WEBAUTHN_ORIGIN', {
+  allowInDevFallback: primaryFrontendOrigin,
+});
+const webauthnOriginUrl = parseOrigin('WEBAUTHN_ORIGIN', webauthnOriginValue, {
+  requireHttpsInProduction: true,
+});
+const webauthnRpId = requireEnv('WEBAUTHN_RP_ID', {
+  allowInDevFallback: frontendOriginUrl.hostname,
+});
+
+if (webauthnOriginUrl.origin !== frontendOriginUrl.origin) {
+  failConfig('WEBAUTHN_ORIGIN must exactly match FRONTEND_URL origin', {
+    frontendOrigin: frontendOriginUrl.origin,
+    webauthnOrigin: webauthnOriginUrl.origin,
+  });
+}
+
+if (webauthnRpId !== frontendOriginUrl.hostname) {
+  failConfig('WEBAUTHN_RP_ID must exactly match the frontend hostname', {
+    expectedRpId: frontendOriginUrl.hostname,
+    configuredRpId: webauthnRpId,
+  });
+}
+
+const googleClientId = requireEnv('GOOGLE_CLIENT_ID');
+const port = isProduction()
+  ? parsePort(requireEnv('PORT'), 0)
+  : parsePort(process.env.PORT, 3001);
 const databaseConfig = getDatabaseConfig();
 
-if (isProduction()) {
-  if (!process.env.WEBAUTHN_RP_ID?.trim()) {
-    warnConfig('WEBAUTHN_RP_ID is missing in production');
-  }
-
-  if (!process.env.FRONTEND_URL?.trim()) {
-    warnConfig('FRONTEND_URL is missing in production');
-  }
+if (process.env.GOOGLE_CLIENT_SECRET?.trim()) {
+  warnConfig('GOOGLE_CLIENT_SECRET is set but unused because Google sign-in uses ID token verification only');
 }
 
 export const config = {
-  port: parsePort(process.env.PORT, 0),
+  port,
   nodeEnv: process.env.NODE_ENV || 'development',
 
   db: databaseConfig,
@@ -252,18 +268,18 @@ export const config = {
   },
 
   admin: {
-    email: process.env.ADMIN_EMAIL || 'admin@offlinepay.local',
+    email: getAdminEmail(),
     password: getAdminPassword(),
   },
 
   google: {
-    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientId: googleClientId,
   },
 
   webauthn: {
     rpName: process.env.WEBAUTHN_RP_NAME || 'OfflinePay',
-    rpID: process.env.WEBAUTHN_RP_ID || 'localhost',
-    origin: webauthnOrigin,
+    rpID: webauthnRpId,
+    origin: webauthnOriginUrl.origin,
   },
 
   celo: {
@@ -275,7 +291,7 @@ export const config = {
   },
 
   frontend: {
-    url: primaryFrontendOrigin,
+    url: frontendOriginUrl.origin,
     allowedOrigins: frontendOrigins,
   },
 
@@ -284,6 +300,7 @@ export const config = {
   },
 
   validation: {
-    criticalEnvLoaded: configWarnings.length === 0,
+    criticalEnvLoaded: configErrors.length === 0,
+    warnings: [...configWarnings],
   },
 };

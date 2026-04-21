@@ -4,6 +4,7 @@ import { Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { GOOGLE_CLIENT_ID } from '@/config/env';
 import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 import { authAPI } from '@/services/apiClient';
 import { storeSession } from '@/lib/auth';
@@ -17,7 +18,7 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 type PasskeyMode = 'login' | 'register';
 
 function resolveGoogleAvailability() {
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const clientId = GOOGLE_CLIENT_ID;
   if (!clientId) {
     return {
       enabled: false,

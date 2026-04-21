@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { config, isAllowedVercelOrigin } from './config/index.js';
+import { config } from './config/index.js';
 import { closeDatabasePool, connectDatabaseWithRetry, getDatabaseStatus } from './config/database.js';
 import { limiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -89,9 +89,8 @@ app.use(cors({
     const isConfiguredOrigin = allowedOrigins.has(origin.replace(/\/+$/, ''));
     const isLocalDevOrigin =
       config.nodeEnv !== 'production' && localhostOriginPattern.test(origin);
-    const isVercelPreviewOrigin = isAllowedVercelOrigin(origin);
 
-    if (isConfiguredOrigin || isLocalDevOrigin || isVercelPreviewOrigin) {
+    if (isConfiguredOrigin || isLocalDevOrigin) {
       return callback(null, true);
     }
 
@@ -247,6 +246,9 @@ export function startServer() {
     host: HOST,
     port: PORT,
     environment: config.nodeEnv,
+    frontendOrigin: config.frontend.url,
+    webauthnOrigin: config.webauthn.origin,
+    webauthnRpId: config.webauthn.rpID,
   });
 
   server = app.listen(PORT, '0.0.0.0', () => {

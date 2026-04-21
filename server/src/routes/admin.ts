@@ -1,5 +1,6 @@
 import { NextFunction, Response, Router } from 'express';
 import pool from '../config/database.js';
+import { config } from '../config/index.js';
 import { AuthSessionModel } from '../models/AuthSession.js';
 import { UserModel } from '../models/User.js';
 import { AuthRequest, authMiddleware } from '../middleware/auth.js';
@@ -50,11 +51,11 @@ router.post('/login', async (req, res) => {
     }
     const { email, password } = result.data;
 
-    if (email !== process.env.ADMIN_EMAIL && email !== 'admin@offlinepay.local') {
+    if (email !== config.admin.email) {
       return res.status(401).json({ error: 'Invalid admin credentials' });
     }
 
-    const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const expectedPassword = config.admin.password;
     if (password !== expectedPassword) {
       return res.status(401).json({ error: 'Invalid admin credentials' });
     }

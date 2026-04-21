@@ -1,37 +1,14 @@
 import { clearSession } from '@/lib/auth';
+import { getApiBaseUrl } from '@/config/env';
 import axios from 'axios';
 
-function normalizeApiBaseUrl(value?: string) {
-  const trimmed = value?.trim();
-
-  if (!trimmed) {
-    return '/api';
-  }
-
-  if (trimmed === '/api') {
-    return trimmed;
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    const normalized = trimmed.replace(/\/+$/, '');
-    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
-  }
-
-  return trimmed.startsWith('/') ? trimmed.replace(/\/+$/, '') : `/${trimmed.replace(/\/+$/, '')}`;
-}
-
-const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL);
-
-if (!import.meta.env.VITE_API_URL) {
-  console.warn('[api] VITE_API_URL is missing. Falling back to /api.');
-}
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
 });
 
-// Add auth token to all requests
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem('sessionToken');
   if (token) {
@@ -40,7 +17,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 and redirect to login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -54,8 +30,7 @@ api.interceptors.response.use(
     });
 
     if (!error.response && error.code === 'ERR_NETWORK') {
-      error.message =
-        'Cannot reach the API server. Start the backend on port 3001 and make sure Postgres is running.';
+      error.message = `Cannot reach the API server at ${API_BASE_URL}.`;
     }
 
     if (error.response?.status === 401) {
