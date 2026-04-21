@@ -53,10 +53,6 @@ export function getWalletConnectProjectId() {
     return projectId;
   }
 
-  if (import.meta.env.PROD) {
-    throw new Error('VITE_WALLETCONNECT_PROJECT_ID is required in production.');
-  }
-
   console.warn('[env] WalletConnect is disabled until VITE_WALLETCONNECT_PROJECT_ID is set.');
   return null;
 }

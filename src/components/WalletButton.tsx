@@ -3,6 +3,7 @@ import { Loader2, LogOut, Wallet } from "lucide-react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 
 import { CELO_MAINNET_CHAIN_ID } from "@/config/celo";
+import { toast } from "@/components/ui/sonner";
 import {
   clearLastWalletType,
   formatWalletAddress,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/wallet";
 import {
   getInjectedConnector,
+  getWalletConnectionErrorMessage,
   getWalletConnectConnector,
   preloadWalletConnect,
 } from "@/lib/wagmi";
@@ -39,7 +41,9 @@ export default function WalletButton() {
       await connectAsync({ connector: walletConnectConnector, chainId: CELO_MAINNET_CHAIN_ID });
       setLastWalletType("walletconnect");
     } catch (error) {
+      const message = getWalletConnectionErrorMessage(error);
       console.error("Connection failed:", error);
+      toast.error(message);
     } finally {
       setLoadingWalletConnect(false);
     }
@@ -73,12 +77,12 @@ export default function WalletButton() {
         type="button"
         onMouseEnter={() => {
           if (!isInjectedAvailable()) {
-            preloadWalletConnect();
+            void preloadWalletConnect().catch(() => {});
           }
         }}
         onFocus={() => {
           if (!isInjectedAvailable()) {
-            preloadWalletConnect();
+            void preloadWalletConnect().catch(() => {});
           }
         }}
         onClick={() => void handleConnect()}

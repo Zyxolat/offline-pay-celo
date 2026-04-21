@@ -12,7 +12,7 @@ import { useAccount, useConnect, useSwitchChain } from "wagmi";
 import WrongNetworkModal from "@/components/web3/WrongNetworkModal";
 import { CELO_MAINNET_CHAIN_ID, type OfflinePayWalletState } from "@/config/celo";
 import { getLastWalletType, isInjectedAvailable, setLastWalletType } from "@/lib/wallet";
-import { getInjectedConnector, getPreferredConnector } from "@/lib/wagmi";
+import { getInjectedConnector, getPreferredConnector, getWalletConnectionErrorMessage } from "@/lib/wagmi";
 
 interface CeloContextValue extends OfflinePayWalletState {
   connecting: boolean;
@@ -57,18 +57,22 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const handleConnect = useCallback(async () => {
-    const preferredConnector = await getPreferredConnector();
-    if (!preferredConnector) {
-      throw new Error("No wallet connector is available.");
+    try {
+      const preferredConnector = await getPreferredConnector();
+      if (!preferredConnector) {
+        throw new Error("No wallet connector is available.");
+      }
+
+      const result = await connectAsync({
+        connector: preferredConnector,
+        chainId: CELO_MAINNET_CHAIN_ID,
+      });
+      setLastWalletType(preferredConnector.id === "walletConnect" ? "walletconnect" : "injected");
+
+      return result.accounts[0];
+    } catch (error) {
+      throw new Error(getWalletConnectionErrorMessage(error));
     }
-
-    const result = await connectAsync({
-      connector: preferredConnector,
-      chainId: CELO_MAINNET_CHAIN_ID,
-    });
-    setLastWalletType(isInjectedAvailable() ? "injected" : "walletconnect");
-
-    return result.accounts[0];
   }, [connectAsync]);
 
   useEffect(() => {
@@ -126,7 +130,7 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
       <WrongNetworkModal
         open={walletState.isConnected && walletState.walletAvailable && walletState.isWrongNetwork}
         onSwitchNetwork={handleSwitchNetwork}
-        switchError={switchError || connectError?.message || ""}
+        switchError={switchError || (connectError ? getWalletConnectionErrorMessage(connectError) : "")}
         switching={switchingNetwork}
       />
     </CeloContext.Provider>

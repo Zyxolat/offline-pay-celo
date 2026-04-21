@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
+  ArrowDownLeft,
+  ArrowLeftRight,
+  Bitcoin,
+  ChevronRight,
+  Coins,
   CreditCard,
   Download,
+  History,
   Loader2,
   LogOut,
   RefreshCcw,
@@ -12,6 +18,7 @@ import {
   Wallet,
   Wifi,
   WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 import TransactionListItem from '@/components/payments/TransactionListItem';
 import WalletCard from '@/components/payments/WalletCard';
@@ -34,6 +41,15 @@ interface WalletTransaction {
 
 interface SessionUser {
   email?: string;
+}
+
+interface MobileAssetItem {
+  icon: LucideIcon;
+  name: string;
+  symbol: string;
+  balance: string;
+  value: string;
+  iconClassName: string;
 }
 
 const quickActions = [
@@ -88,6 +104,54 @@ export const Dashboard = () => {
   const claimableCount = useMemo(
     () => payments.filter((payment) => payment.canAccept).length,
     [payments],
+  );
+
+  const mobileAssets = useMemo<MobileAssetItem[]>(
+    () => [
+      {
+        icon: Coins,
+        name: 'Celo',
+        symbol: 'CELO',
+        balance: `${walletBalance || '0'} CELO`,
+        value: account ? 'USD value syncs after price feed is enabled' : 'Connect wallet to sync asset value',
+        iconClassName: 'bg-gradient-to-br from-amber-300 to-orange-500 text-slate-950',
+      },
+      {
+        icon: ShieldCheck,
+        name: 'Locked Celo',
+        symbol: 'CELO',
+        balance: `${totalLocked.toFixed(4)} CELO`,
+        value: `${claimableCount} claimable transfer${claimableCount === 1 ? '' : 's'} ready`,
+        iconClassName: 'bg-gradient-to-br from-yellow-400 to-amber-500 text-slate-950',
+      },
+    ],
+    [account, claimableCount, totalLocked, walletBalance],
+  );
+
+  const mobileQuickActions = useMemo(
+    () => [
+      {
+        label: 'Send',
+        icon: Send,
+        onClick: () => navigate('/send'),
+      },
+      {
+        label: 'Receive',
+        icon: ArrowDownLeft,
+        onClick: () => navigate('/receive'),
+      },
+      {
+        label: 'Swap',
+        icon: ArrowLeftRight,
+        onClick: () => toast.info('Swap is coming soon. Use Transfer or Withdraw for now.'),
+      },
+      {
+        label: 'History',
+        icon: History,
+        onClick: () => navigate('/transactions'),
+      },
+    ],
+    [navigate],
   );
 
   useEffect(() => {
@@ -168,7 +232,102 @@ export const Dashboard = () => {
       </div>
 
       <div className="container mx-auto space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-        <Card className="overflow-hidden border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+        <div className="space-y-4 md:hidden">
+          <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-amber-300/80">Total balance</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight">{walletBalance || '0'} CELO</h2>
+                <p className="mt-2 flex items-center gap-2 text-sm text-slate-300">
+                  <Bitcoin size={14} className="text-amber-300" />
+                  {account ? formatWalletAddress(account, 8, 6) : 'Connect wallet to sync your main balance'}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white/10 p-3 text-amber-300">
+                <Wallet size={22} />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/receive')}
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-amber-300 to-orange-500 px-4 text-sm font-semibold text-slate-950 transition active:scale-[0.99]"
+              >
+                Deposit
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/send')}
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-[0.99]"
+              >
+                Transfer
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-md">
+            <p className="text-xs uppercase tracking-[0.28em] text-amber-300/80">Quick actions</p>
+            <div className="mt-4 grid grid-cols-4 gap-3">
+              {mobileQuickActions.map(({ label, icon: Icon, onClick }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  className="flex min-h-11 flex-col items-center justify-center gap-2 rounded-2xl bg-white/5 px-2 py-3 text-center text-xs font-medium text-slate-100 transition hover:bg-white/10 active:scale-[0.99]"
+                >
+                  <span className="rounded-full bg-amber-300/15 p-2 text-amber-300">
+                    <Icon size={16} />
+                  </span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-md">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-amber-300/80">Assets</p>
+                <h3 className="mt-2 text-lg font-semibold">Wallet holdings</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/transactions')}
+                className="inline-flex min-h-11 items-center gap-1 rounded-2xl px-3 text-sm font-medium text-amber-300"
+              >
+                View all
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {mobileAssets.map(({ icon: Icon, name, symbol, balance, value, iconClassName }) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => navigate('/transactions')}
+                  className="flex min-h-11 w-full items-center gap-3 rounded-2xl bg-white/5 p-4 text-left transition hover:bg-white/10"
+                >
+                  <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${iconClassName}`}>
+                    <Icon size={20} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white">{name}</span>
+                    <span className="block text-xs text-slate-400">{symbol}</span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block text-sm font-semibold text-white">{balance}</span>
+                    <span className="block text-xs text-slate-400">{value}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <Card className="hidden overflow-hidden border-slate-200 bg-white shadow-xl shadow-slate-200/70 md:block">
           <div className="grid gap-8 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(30,41,59,0.98))] p-6 text-white lg:grid-cols-[1.25fr_0.75fr] lg:p-8">
             <div>
               <div className="mb-5 inline-flex rounded-2xl bg-white/10 p-3 text-emerald-200">
@@ -200,7 +359,7 @@ export const Dashboard = () => {
           </div>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="hidden gap-4 md:grid md:grid-cols-3">
           {quickActions.map(({ label, description, icon: Icon, href, className }) => (
             <button
               key={label}
