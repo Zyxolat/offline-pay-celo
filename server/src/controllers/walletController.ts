@@ -2,7 +2,19 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { walletService } from '../services/walletService.js';
 import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse } from '../utils/validators.js';
+import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
+import { z } from 'zod';
+
+const getTransactionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+const withdrawSchema = z.object({
+  destinationAddress: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/),
+  token: z.enum(['CELO', 'cUSD']),
+  amount: z.string().trim().refine((value) => !Number.isNaN(Number(value)) && Number(value) > 0),
+});
 
 export const walletController = {
   async getBalance(req: AuthRequest, res: Response) {
@@ -39,8 +51,12 @@ export const walletController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+      const query = validateWithSchema(res, getTransactionsQuerySchema, req.query);
+      if (!query) {
+        return;
+      }
+      const limit = query.limit ?? 50;
+      const offset = query.offset ?? 0;
 
       const result = await walletService.getTransactionHistory(req.user.userId, limit, offset);
       successResponse(res, result);
@@ -56,11 +72,11 @@ export const walletController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { destinationAddress, token, amount } = req.body;
-
-      if (!destinationAddress || !token || !amount) {
-        return errorResponse(res, 'destinationAddress, token, and amount are required', 400);
+      const payload = validateWithSchema(res, withdrawSchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { destinationAddress, token, amount } = payload;
 
       const result = await walletService.withdraw(req.user.userId, destinationAddress, token, amount);
       successResponse(res, result, 201);

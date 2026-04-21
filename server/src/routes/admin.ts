@@ -5,8 +5,13 @@ import { UserModel } from '../models/User.js';
 import { AuthRequest, authMiddleware } from '../middleware/auth.js';
 import { tokenService } from '../services/tokenService.js';
 import { normalizeError } from '../utils/logger.js';
+import { z } from 'zod';
 
 const router = Router();
+const adminLoginSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(6),
+});
 
 const adminMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -39,11 +44,11 @@ const adminMiddleware = async (req: AuthRequest, res: Response, next: NextFuncti
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const result = adminLoginSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ error: 'Invalid admin login payload', details: result.error.flatten() });
     }
+    const { email, password } = result.data;
 
     if (email !== process.env.ADMIN_EMAIL && email !== 'admin@offlinepay.local') {
       return res.status(401).json({ error: 'Invalid admin credentials' });

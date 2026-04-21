@@ -4,8 +4,32 @@ import { transactionService } from '../services/transactionService.js';
 import { ChallengeModel } from '../models/Challenge.js';
 import { celoService } from '../services/celoService.js';
 import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse, validateAddress, validateAmount } from '../utils/validators.js';
+import {
+  successResponse,
+  errorResponse,
+  validateWithSchema,
+} from '../utils/validators.js';
 import { randomBytes } from 'crypto';
+import { z } from 'zod';
+
+const authorizeChallengeSchema = z.object({
+  recipient: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/),
+  amount: z.string().trim().refine((value) => !Number.isNaN(Number(value)) && Number(value) > 0),
+  currency: z.enum(['cUSD', 'CELO']),
+  note: z.string().trim().max(500).optional(),
+});
+
+const authorizeVerifySchema = z.object({
+  paymentId: z.string().trim().min(1),
+  credentialId: z.string().trim().min(1),
+  response: z.unknown(),
+});
+
+const submitPaymentSchema = z.object({
+  paymentId: z.string().trim().min(1),
+  signedTx: z.string().trim().min(1),
+  offline: z.boolean().optional(),
+});
 
 export const paymentController = {
   async authorizeChallenge(req: AuthRequest, res: Response) {
@@ -14,20 +38,11 @@ export const paymentController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { recipient, amount, currency, note } = req.body;
-
-      // Validate inputs
-      if (!validateAddress(recipient)) {
-        return errorResponse(res, 'Invalid recipient address', 400);
+      const payload = validateWithSchema(res, authorizeChallengeSchema, req.body);
+      if (!payload) {
+        return;
       }
-
-      if (!validateAmount(amount)) {
-        return errorResponse(res, 'Invalid amount', 400);
-      }
-
-      if (!['cUSD', 'CELO'].includes(currency)) {
-        return errorResponse(res, 'Invalid currency', 400);
-      }
+      const { recipient, amount, currency, note } = payload;
 
       // Create payment record
       const payment = await transactionService.createPayment(
@@ -65,11 +80,11 @@ export const paymentController = {
 
   async authorizeVerify(req: AuthRequest, res: Response) {
     try {
-      const { paymentId, credentialId, response } = req.body;
-
-      if (!paymentId || !credentialId || !response) {
-        return errorResponse(res, 'Missing required fields', 400);
+      const payload = validateWithSchema(res, authorizeVerifySchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { paymentId, credentialId, response } = payload;
 
       // Verify challenge exists and hasn't expired
       // In production, would verify the WebAuthn response here
@@ -101,11 +116,11 @@ export const paymentController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { paymentId, signedTx, offline } = req.body;
-
-      if (!paymentId || !signedTx) {
-        return errorResponse(res, 'Missing required fields', 400);
+      const payload = validateWithSchema(res, submitPaymentSchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { paymentId, signedTx, offline } = payload;
 
       if (offline) {
         // Queue the transaction for later sync

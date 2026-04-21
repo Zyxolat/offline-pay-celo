@@ -13,8 +13,9 @@ import {
   getAccount,
   switchChain,
   watchChainId,
-  watchConnection,
+  watchConnections,
 } from "wagmi/actions";
+import type { EIP1193Provider } from "viem";
 
 import {
   CELO_MAINNET_CHAIN_ID,
@@ -147,13 +148,13 @@ const getFriendlyErrorMessage = (error: unknown) => {
   return "Something went wrong while talking to the OfflinePay contract.";
 };
 
-const getEthereumProvider = () => {
+const getEthereumProvider = async (): Promise<EIP1193Provider> => {
   const { connector } = getAccount(wagmiConfig);
   if (!connector) {
     throw new Error("Connect a compatible wallet like MiniPay or MetaMask to continue.");
   }
 
-  return connector.getProvider({ chainId: CELO_MAINNET_CHAIN_ID });
+  return await connector.getProvider({ chainId: CELO_MAINNET_CHAIN_ID }) as EIP1193Provider;
 };
 
 const saveWalletState = (state: OfflinePayWalletState) => {
@@ -231,14 +232,14 @@ export const switchToCeloMainnet = async () => {
 
 export const ensureCeloMainnet = async () => {
   const ethereum = await getEthereumProvider();
-  const provider = new BrowserProvider(ethereum);
+  const provider = new BrowserProvider(ethereum as any);
   const network = await provider.getNetwork();
 
   if (network.chainId !== CELO_MAINNET_CHAIN_ID_BIGINT) {
     await switchToCeloMainnet();
   }
 
-  return new BrowserProvider(await getEthereumProvider());
+  return new BrowserProvider((await getEthereumProvider()) as any);
 };
 
 export const connectWallet = async () => {
@@ -516,7 +517,7 @@ export const subscribeToWalletEvents = (listener: () => void) => {
     return () => undefined;
   }
 
-  const unwatchConnection = watchConnection(wagmiConfig, {
+  const unwatchConnection = watchConnections(wagmiConfig, {
     onChange: () => listener(),
   });
   const unwatchChain = watchChainId(wagmiConfig, {

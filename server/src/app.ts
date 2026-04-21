@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { config } from './config/index.js';
+import { config, isAllowedVercelOrigin } from './config/index.js';
 import { closeDatabasePool, connectDatabaseWithRetry, getDatabaseStatus } from './config/database.js';
 import { limiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -21,6 +21,7 @@ import adminRoutes from './routes/admin.js';
 const app = express();
 const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 const HOST = '0.0.0.0';
+const FALLBACK_PORT = 3001;
 
 const allowedOrigins = new Set(config.frontend.allowedOrigins);
 let isShuttingDown = false;
@@ -30,7 +31,55 @@ let hasStartedServer = false;
 
 app.set('trust proxy', 1);
 
-// Security middleware
+app.get('/ping', (_req: Request, res: Response) => {
+  res.status(200).send('pong');
+});
+
+app.get('/health', (_req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    db: database.phase,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/status', (_req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+
+  res.status(200).json({
+    app: {
+      status: 'ok',
+      environment: config.nodeEnv,
+      uptime: process.uptime(),
+      shuttingDown: isShuttingDown,
+    },
+    db: {
+      phase: database.phase,
+      isReady: database.isReady,
+      isConnecting: database.isConnecting,
+      attempts: database.attempts,
+      circuitState: database.circuitState,
+      lastConnectedAt: database.lastConnectedAt,
+      cooldownUntil: database.cooldownUntil,
+      lastError: database.lastError,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/', (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'offlinepay-backend',
+    environment: config.nodeEnv,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use(helmet());
 
 app.use(cors({
@@ -40,8 +89,9 @@ app.use(cors({
     const isConfiguredOrigin = allowedOrigins.has(origin.replace(/\/+$/, ''));
     const isLocalDevOrigin =
       config.nodeEnv !== 'production' && localhostOriginPattern.test(origin);
+    const isVercelPreviewOrigin = isAllowedVercelOrigin(origin);
 
-    if (isConfiguredOrigin || isLocalDevOrigin) {
+    if (isConfiguredOrigin || isLocalDevOrigin || isVercelPreviewOrigin) {
       return callback(null, true);
     }
 
@@ -119,28 +169,6 @@ app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check
-app.get('/', (req: Request, res: Response) => {
-  const database = getDatabaseStatus();
-
-  res.status(200).json({
-    status: 'ok',
-    service: 'offlinepay-backend',
-    environment: config.nodeEnv,
-    uptime: process.uptime(),
-    db: database.phase,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  });
-});
-
 app.get('/ready', (req: Request, res: Response) => {
   const database = getDatabaseStatus();
   const ready = config.validation.criticalEnvLoaded && database.isReady;
@@ -152,36 +180,23 @@ app.get('/ready', (req: Request, res: Response) => {
   });
 });
 
-app.get('/status', (req: Request, res: Response) => {
-  const database = getDatabaseStatus();
-
-  res.json({
-    uptime: process.uptime(),
-    environment: config.nodeEnv,
-    db: {
-      phase: database.phase,
-      isReady: database.isReady,
-      isConnecting: database.isConnecting,
-      attempts: database.attempts,
-      circuitState: database.circuitState,
-      lastConnectedAt: database.lastConnectedAt,
-      cooldownUntil: database.cooldownUntil,
-    },
-    memory: process.memoryUsage(),
-    shuttingDown: isShuttingDown,
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // Rate limiting
 app.use('/api', limiter);
 
-// Keep API responsive while dependencies warm up.
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const database = getDatabaseStatus();
 
   if (!database.isReady) {
     res.setHeader('x-service-state', 'warming-up');
+    return res.status(503).json({
+      success: false,
+      error: 'Database is warming up. Try again shortly.',
+      db: {
+        phase: database.phase,
+        isConnecting: database.isConnecting,
+        attempts: database.attempts,
+      },
+    });
   }
 
   next();
@@ -195,11 +210,6 @@ app.use('/api/queue', queueRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Health / debug endpoint (MUST be before 404)
-app.get("/ping", (req: Request, res: Response) => {
-  res.status(200).send("pong");
-});
-
 // 404
 app.use((req: Request, res: Response) => {
   res.status(404).json({
@@ -211,7 +221,7 @@ app.use((req: Request, res: Response) => {
 // Error handler
 app.use(errorHandler);
 
-const PORT = Number.parseInt(process.env.PORT ?? '', 10) || config.port;
+const PORT = Number(process.env.PORT || config.port || FALLBACK_PORT || 3000);
 const serverBootstrapState = globalThis as typeof globalThis & {
   __server_started__?: boolean;
 };
@@ -222,14 +232,8 @@ function registerGlobalErrorHandlers() {
   }
 
   hasRegisteredGlobalErrorHandlers = true;
-
-  process.on('uncaughtException', (error) => {
-    log('ERROR', 'Uncaught exception', normalizeError(error));
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    log('ERROR', 'Unhandled promise rejection', normalizeError(reason));
-  });
+  process.on('uncaughtException', console.error);
+  process.on('unhandledRejection', console.error);
 }
 
 export function startServer() {
@@ -245,7 +249,7 @@ export function startServer() {
     environment: config.nodeEnv,
   });
 
-  server = app.listen(PORT, HOST, () => {
+  server = app.listen(PORT, '0.0.0.0', () => {
     log('INFO', 'API server is listening', {
       host: HOST,
       port: PORT,
@@ -264,8 +268,8 @@ export function startServer() {
 
   server.keepAliveTimeout = 60_000;
   server.headersTimeout = 65_000;
-  server.requestTimeout = 30_000;
-  server.timeout = 30_000;
+  server.requestTimeout = 60_000;
+  server.timeout = 60_000;
 
   server.on('timeout', () => {
     log('WARN', 'HTTP server timed out a request');

@@ -111,6 +111,7 @@ export const AuthSelection = ({
       }
       finishSession(result);
     } catch (err: any) {
+      console.error('[AuthSelection] Google auth failed', err);
       setError(err.response?.data?.error || 'Google authentication failed');
     } finally {
       setLoading(null);
@@ -173,6 +174,7 @@ export const AuthSelection = ({
       }
       finishSession(result);
     } catch (err: any) {
+      console.error('[AuthSelection] Passkey auth failed', err);
       setError(err.response?.data?.error || err.message || 'Passkey authentication failed');
     } finally {
       setLoading(null);

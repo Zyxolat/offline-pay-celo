@@ -16,7 +16,7 @@ import {
 } from "@/lib/wagmi";
 
 export default function WalletButton() {
-  const { connectAsync, connectors, isPending, pendingConnector } = useConnect();
+  const { connectAsync, connectors, isPending, variables } = useConnect();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const [loadingWalletConnect, setLoadingWalletConnect] = useState(false);
@@ -49,7 +49,7 @@ export default function WalletButton() {
   const pendingConnectorName =
     loadingWalletConnect && !isInjectedAvailable()
       ? "WalletConnect"
-      : pendingConnector?.name;
+      : variables?.connector?.name;
 
   if (isConnected && address) {
     return (

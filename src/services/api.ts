@@ -1,7 +1,30 @@
 import { clearSession } from '@/lib/auth';
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+function normalizeApiBaseUrl(value?: string) {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return '/api';
+  }
+
+  if (trimmed === '/api') {
+    return trimmed;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const normalized = trimmed.replace(/\/+$/, '');
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  return trimmed.startsWith('/') ? trimmed.replace(/\/+$/, '') : `/${trimmed.replace(/\/+$/, '')}`;
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL);
+
+if (!import.meta.env.VITE_API_URL) {
+  console.warn('[api] VITE_API_URL is missing. Falling back to /api.');
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -21,6 +44,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    console.error('[api] Request failed', {
+      method: error.config?.method,
+      url: error.config?.url,
+      baseURL: error.config?.baseURL,
+      status: error.response?.status,
+      message: error.message,
+      data: error.response?.data,
+    });
+
     if (!error.response && error.code === 'ERR_NETWORK') {
       error.message =
         'Cannot reach the API server. Start the backend on port 3001 and make sure Postgres is running.';

@@ -2,9 +2,11 @@ import {
   VerifiedAuthenticationResponse,
   VerifiedRegistrationResponse,
 } from '@simplewebauthn/server';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/types';
 import { OAuth2Client } from 'google-auth-library';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
+import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth.js';
 import { ChallengeModel } from '../models/Challenge.js';
 import { CredentialModel } from '../models/Credential.js';
@@ -15,9 +17,47 @@ import { webauthnConfig } from '../config/webauthn.js';
 import { tokenService } from '../services/tokenService.js';
 import { celoService } from '../services/celoService.js';
 import { normalizeError } from '../utils/logger.js';
-import { errorResponse, successResponse, validateEmail } from '../utils/validators.js';
+import { errorResponse, successResponse, validateWithSchema } from '../utils/validators.js';
 
 const googleClient = new OAuth2Client(config.google.clientId || undefined);
+const googleLoginSchema = z.object({
+  idToken: z.string().trim().min(1),
+});
+const passkeyEmailSchema = z.object({
+  email: z.string().trim().email(),
+});
+const passkeyVerifySchema = z.object({
+  email: z.string().trim().email(),
+  credential: z.unknown(),
+});
+
+type GoogleTokenPayload = {
+  sub?: string;
+  email?: string;
+  email_verified?: boolean;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isRegistrationResponseJSON = (value: unknown): value is RegistrationResponseJSON =>
+  isRecord(value) &&
+  value.type === 'public-key' &&
+  typeof value.id === 'string' &&
+  typeof value.rawId === 'string' &&
+  isRecord(value.response) &&
+  typeof value.response.clientDataJSON === 'string' &&
+  typeof value.response.attestationObject === 'string';
+
+const isAuthenticationResponseJSON = (value: unknown): value is AuthenticationResponseJSON =>
+  isRecord(value) &&
+  value.type === 'public-key' &&
+  typeof value.id === 'string' &&
+  typeof value.rawId === 'string' &&
+  isRecord(value.response) &&
+  typeof value.response.clientDataJSON === 'string' &&
+  typeof value.response.authenticatorData === 'string' &&
+  typeof value.response.signature === 'string';
 
 const encodeBase64Url = (buffer: Uint8Array | Buffer) =>
   Buffer.from(buffer).toString('base64url');
@@ -116,27 +156,31 @@ const getExpectedOrigins = (
 export const authController = {
   async google(req: AuthRequest, res: Response) {
     try {
-      const { idToken } = req.body;
-      if (!idToken) {
-        return errorResponse(res, 'Google ID token is required', 400);
+      const authPayload = validateWithSchema(res, googleLoginSchema, req.body);
+      if (!authPayload) {
+        return;
       }
 
       const ticket = await googleClient.verifyIdToken({
-        idToken,
+        idToken: authPayload.idToken,
         audience: config.google.clientId,
       });
 
-      const payload = ticket.getPayload();
-      if (!payload?.sub || !payload.email || !payload.email_verified) {
+      const googlePayload = ticket.getPayload() as GoogleTokenPayload | undefined;
+      if (!googlePayload?.sub || !googlePayload.email || !googlePayload.email_verified) {
         return errorResponse(res, 'Invalid Google account payload', 401);
       }
 
-      const existingByGoogle = await UserModel.findByGoogleId(payload.sub);
+      const existingByGoogle = await UserModel.findByGoogleId(googlePayload.sub);
       let user = existingByGoogle;
 
       if (!user) {
         const walletAddress = celoService.generateWalletAddress();
-        user = await UserModel.upsertGoogleUser(payload.email, payload.sub, walletAddress);
+        user = await UserModel.upsertGoogleUser(
+          googlePayload.email,
+          googlePayload.sub,
+          walletAddress
+        );
       }
 
       const sessionToken = await issueSession(user, 'google');
@@ -153,10 +197,16 @@ export const authController = {
 
   async webauthnRegisterOptions(req: AuthRequest, res: Response) {
     try {
-      const { email } = req.body;
-      if (!email || !validateEmail(email)) {
-        return errorResponse(res, 'A valid email is required', 400);
+      console.log('Signup request received', {
+        route: req.originalUrl,
+        origin: req.headers.origin,
+      });
+
+      const payload = validateWithSchema(res, passkeyEmailSchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { email } = payload;
 
       let user = await UserModel.findByEmail(email);
       if (!user) {
@@ -187,9 +237,13 @@ export const authController = {
 
   async webauthnRegisterVerify(req: AuthRequest, res: Response) {
     try {
-      const { email, credential } = req.body;
-      if (!email || !credential) {
-        return errorResponse(res, 'Email and credential are required', 400);
+      const payload = validateWithSchema(res, passkeyVerifySchema, req.body);
+      if (!payload) {
+        return;
+      }
+      const { email, credential } = payload;
+      if (!isRegistrationResponseJSON(credential)) {
+        return errorResponse(res, 'Invalid passkey registration payload', 400);
       }
 
       const user = await UserModel.findByEmail(email);
@@ -234,8 +288,8 @@ export const authController = {
             credentialDeviceType,
             credentialBackedUp,
           },
-          credential.response?.transports || []
-        );
+        credential.response.transports || []
+      );
       }
 
       await CredentialModel.updateCounter(credentialId, counter);
@@ -265,10 +319,11 @@ export const authController = {
 
   async webauthnLoginOptions(req: AuthRequest, res: Response) {
     try {
-      const { email } = req.body;
-      if (!email || !validateEmail(email)) {
-        return errorResponse(res, 'A valid email is required', 400);
+      const payload = validateWithSchema(res, passkeyEmailSchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { email } = payload;
 
       const user = await UserModel.findByEmail(email);
       if (!user) {
@@ -298,9 +353,13 @@ export const authController = {
 
   async webauthnLoginVerify(req: AuthRequest, res: Response) {
     try {
-      const { email, credential } = req.body;
-      if (!email || !credential) {
-        return errorResponse(res, 'Email and credential are required', 400);
+      const payload = validateWithSchema(res, passkeyVerifySchema, req.body);
+      if (!payload) {
+        return;
+      }
+      const { email, credential } = payload;
+      if (!isAuthenticationResponseJSON(credential)) {
+        return errorResponse(res, 'Invalid passkey authentication payload', 400);
       }
 
       const user = await UserModel.findByEmail(email);

@@ -49,9 +49,12 @@ function tryParseOrigin(value: string): URL | null {
 
 function getFrontendOrigins(): string[] {
   const rawValue = process.env.FRONTEND_URL?.trim();
+  const isProd = isProduction();
   const rawOrigins = rawValue
     ? rawValue.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean)
-    : ['http://localhost:5173'];
+    : isProd
+      ? []
+      : ['http://localhost:5173'];
 
   const validOrigins: string[] = [];
 
@@ -77,11 +80,20 @@ function getFrontendOrigins(): string[] {
       return [parsedFallback.origin];
     }
 
+    if (isProd) {
+      warnConfig('FRONTEND_URL is missing or invalid in production');
+      return [];
+    }
+
     log('WARN', 'No valid FRONTEND_URL origins found; falling back to localhost only');
     return ['http://localhost:5173'];
   }
 
   return [...new Set(validOrigins)];
+}
+
+export function isAllowedVercelOrigin(origin: string) {
+  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
 }
 
 function getWebauthnOrigin(frontendOrigin: string): string {
@@ -184,7 +196,7 @@ function getDatabaseConfig() {
     return {
       url: parsed ? requiredUrl : undefined,
       ssl: Boolean(parsed),
-      source: parsed ? 'database_url' : 'local',
+      source: 'database_url',
     };
   }
 
@@ -214,8 +226,19 @@ function getDatabaseConfig() {
 }
 
 const frontendOrigins = getFrontendOrigins();
-const webauthnOrigin = getWebauthnOrigin(frontendOrigins[0]);
+const primaryFrontendOrigin = frontendOrigins[0] || 'http://localhost:5173';
+const webauthnOrigin = getWebauthnOrigin(primaryFrontendOrigin);
 const databaseConfig = getDatabaseConfig();
+
+if (isProduction()) {
+  if (!process.env.WEBAUTHN_RP_ID?.trim()) {
+    warnConfig('WEBAUTHN_RP_ID is missing in production');
+  }
+
+  if (!process.env.FRONTEND_URL?.trim()) {
+    warnConfig('FRONTEND_URL is missing in production');
+  }
+}
 
 export const config = {
   port: parsePort(process.env.PORT, 0),
@@ -252,7 +275,7 @@ export const config = {
   },
 
   frontend: {
-    url: frontendOrigins[0],
+    url: primaryFrontendOrigin,
     allowedOrigins: frontendOrigins,
   },
 

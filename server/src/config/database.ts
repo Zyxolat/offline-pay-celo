@@ -20,22 +20,24 @@ const isProduction = config.nodeEnv === 'production';
 const poolConfig = config.db.url
   ? {
       connectionString: config.db.url,
-      ssl: isProduction
+      ssl: config.db.ssl
         ? { rejectUnauthorized: false }
         : false,
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     }
-  : {
-      ...config.db.local,
-      ssl: false,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    };
+  : config.db.local && Object.values(config.db.local).some((value) => value !== undefined && value !== '')
+    ? {
+        ...config.db.local,
+        ssl: false,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      }
+    : null;
 
-const pool = new Pool(poolConfig);
+const pool = poolConfig ? new Pool(poolConfig) : null;
 type DatabasePhase = 'connecting' | 'connected' | 'failed';
 const databaseState = {
   isConnected: false,
@@ -108,48 +110,63 @@ function getConnectionLogMeta() {
   };
 }
 
-pool.on('error', (error: Error & { code?: string }) => {
-  const normalizedError = normalizeError(error);
-  databaseState.isConnected = false;
-  databaseState.isReady = false;
-  databaseState.phase = 'failed';
-  databaseState.lastError = normalizedError;
+if (pool) {
+  pool.on('error', (error: Error & { code?: string }) => {
+    const normalizedError = normalizeError(error);
+    databaseState.isConnected = false;
+    databaseState.isReady = false;
+    databaseState.phase = 'failed';
+    databaseState.lastError = normalizedError;
 
-  log('ERROR', 'Unexpected PostgreSQL pool error', {
-    ...normalizedError,
-    ...(error.code ? { code: error.code } : {}),
-    ...getConnectionLogMeta(),
-  });
-
-  if (!databaseState.isConnecting && !reconnectScheduled) {
-    reconnectScheduled = true;
-
-    void connectDatabaseWithRetry().finally(() => {
-      reconnectScheduled = false;
-    });
-  }
-});
-
-pool.on('connect', () => {
-  databaseState.isConnected = true;
-  databaseState.isReady = true;
-  databaseState.lastConnectedAt = new Date().toISOString();
-  databaseState.lastError = null;
-  databaseState.phase = 'connected';
-  databaseState.circuitState = 'closed';
-  databaseState.consecutiveFailures = 0;
-  databaseState.cooldownUntil = null;
-
-  if (!hasLoggedInitialConnection) {
-    hasLoggedInitialConnection = true;
-
-    log('INFO', 'PostgreSQL connection established', {
+    log('ERROR', 'Unexpected PostgreSQL pool error', {
+      ...normalizedError,
+      ...(error.code ? { code: error.code } : {}),
       ...getConnectionLogMeta(),
     });
-  }
-});
+
+    if (!databaseState.isConnecting && !reconnectScheduled) {
+      reconnectScheduled = true;
+
+      void connectDatabaseWithRetry().finally(() => {
+        reconnectScheduled = false;
+      });
+    }
+  });
+
+  pool.on('connect', () => {
+    databaseState.isConnected = true;
+    databaseState.isReady = true;
+    databaseState.lastConnectedAt = new Date().toISOString();
+    databaseState.lastError = null;
+    databaseState.phase = 'connected';
+    databaseState.circuitState = 'closed';
+    databaseState.consecutiveFailures = 0;
+    databaseState.cooldownUntil = null;
+
+    if (!hasLoggedInitialConnection) {
+      hasLoggedInitialConnection = true;
+
+      log('INFO', 'PostgreSQL connection established', {
+        ...getConnectionLogMeta(),
+      });
+    }
+  });
+} else {
+  databaseState.phase = 'failed';
+  databaseState.lastError = serializeError(
+    new Error(
+      isProduction
+        ? 'DATABASE_URL is missing or invalid; refusing to fall back to localhost in production.'
+        : 'Database configuration is missing. Provide DATABASE_URL or local PG env vars.'
+    )
+  );
+}
 
 export async function verifyDatabaseConnection() {
+  if (!pool) {
+    throw new Error('PostgreSQL pool is not configured.');
+  }
+
   const client = await withTimeout(pool.connect(), CONNECTION_TIMEOUT_MS, 'Database connection');
 
   try {
@@ -174,6 +191,23 @@ export async function connectDatabaseWithRetry() {
   }
 
   connectionAttemptPromise = (async () => {
+    if (!pool) {
+      databaseState.isConnecting = false;
+      databaseState.isConnected = false;
+      databaseState.isReady = false;
+      databaseState.phase = 'failed';
+      databaseState.circuitState = 'open';
+
+      log('ERROR', 'PostgreSQL pool was not created', {
+        ...getConnectionLogMeta(),
+        hint: isProduction
+          ? 'Set Railway DATABASE_URL to a reachable Postgres connection string.'
+          : 'Provide DATABASE_URL or local PG env vars before starting the server.',
+      });
+
+      return false;
+    }
+
     databaseState.isConnecting = true;
     databaseState.phase = 'connecting';
     databaseState.circuitState = 'half_open';
@@ -266,7 +300,9 @@ export async function connectDatabaseWithRetry() {
 
 export async function closeDatabasePool() {
   log('INFO', 'Closing PostgreSQL connection pool');
-  await pool.end();
+  if (pool) {
+    await pool.end();
+  }
   databaseState.isConnected = false;
   databaseState.isReady = false;
   databaseState.isConnecting = false;

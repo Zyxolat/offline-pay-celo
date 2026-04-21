@@ -3,7 +3,18 @@ import { AuthRequest } from '../middleware/auth.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { UserModel } from '../models/User.js';
 import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse } from '../utils/validators.js';
+import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
+import { z } from 'zod';
+
+const transactionDetailParamsSchema = z.object({
+  txId: z.string().trim().min(1),
+});
+
+const batchStatusQuerySchema = z.object({
+  txHashes: z
+    .union([z.string().trim().min(1), z.array(z.string().trim().min(1))])
+    .optional(),
+});
 
 export const transactionController = {
   async getDetail(req: AuthRequest, res: Response) {
@@ -12,7 +23,11 @@ export const transactionController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { txId } = req.params;
+      const params = validateWithSchema(res, transactionDetailParamsSchema, req.params);
+      if (!params) {
+        return;
+      }
+      const { txId } = params;
 
       const tx = await TransactionModel.findById(txId);
       if (!tx || tx.user_id !== req.user.userId) {
@@ -50,7 +65,11 @@ export const transactionController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { txHashes } = req.query;
+      const query = validateWithSchema(res, batchStatusQuerySchema, req.query);
+      if (!query) {
+        return;
+      }
+      const { txHashes } = query;
       const hashes = Array.isArray(txHashes) ? txHashes : (txHashes ? [txHashes] : []);
 
       const results = [];

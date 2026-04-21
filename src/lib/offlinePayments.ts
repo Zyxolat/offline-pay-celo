@@ -434,7 +434,7 @@ function resolveSigner(
   signer: Wallet | JsonRpcSigner,
   providerUrl?: string,
 ): Wallet | JsonRpcSigner {
-  if ('provider' in signer && signer.provider) {
+  if (!(signer instanceof ethers.Wallet)) {
     return signer;
   }
 
@@ -470,7 +470,7 @@ export async function syncPaymentToBlockchain(
   const nonce = payment.nonce >= chainNonce ? payment.nonce : chainNonce;
   const amount = parseTokenAmount(payment.amount);
 
-  let txResponse: ethers.providers.TransactionResponse;
+  let txResponse: ethers.TransactionResponse;
   if (payment.currency === 'CELO') {
     txResponse = await walletSigner.sendTransaction({
       to: payment.to,
@@ -489,7 +489,7 @@ export async function syncPaymentToBlockchain(
 
   const receipt = await txResponse.wait();
   payment.status = 'broadcasted';
-  payment.broadcastTxHash = receipt.transactionHash;
+  payment.broadcastTxHash = receipt.hash;
   payment.lastError = undefined;
   await putPaymentInStore(storeName, payment);
   return payment;

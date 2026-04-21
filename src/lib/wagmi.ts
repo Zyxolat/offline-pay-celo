@@ -1,6 +1,6 @@
 import { createConfig, http } from "wagmi";
 import { celoAlfajores, celo } from "wagmi/chains";
-import { injected } from "wagmi/connectors";
+import { injected, walletConnect } from "wagmi/connectors";
 
 import { isInjectedAvailable, isMiniPay } from "@/lib/wallet";
 
@@ -8,7 +8,12 @@ const WALLETCONNECT_PROJECT_ID = "9837d116c1ffcee9874d5614c7ceef10";
 
 export const config = createConfig({
   chains: [celoAlfajores, celo],
-  connectors: [injected()],
+  connectors: [
+    injected(),
+    walletConnect({
+      projectId: WALLETCONNECT_PROJECT_ID,
+    }),
+  ],
   transports: {
     [celoAlfajores.id]: http(),
     [celo.id]: http(),
@@ -16,10 +21,6 @@ export const config = createConfig({
 });
 
 type WagmiConnector = (typeof config.connectors)[number];
-
-let cachedWCConnector: WagmiConnector | null = null;
-let walletConnectConnectorPromise: Promise<WagmiConnector> | null = null;
-let wcImportPromise: Promise<typeof import("wagmi/connectors")> | null = null;
 
 export const getInjectedConnector = (): WagmiConnector | undefined =>
   config.connectors.find(
@@ -29,36 +30,21 @@ export const getInjectedConnector = (): WagmiConnector | undefined =>
       /minipay|injected|metamask/i.test(connector.name),
   );
 
-export const preloadWalletConnect = () => {
+export const preloadWalletConnect = async () => {
   if (isInjectedAvailable() || isMiniPay()) {
     return null;
   }
 
-  if (!wcImportPromise) {
-    wcImportPromise = import("wagmi/connectors");
-  }
-
-  return wcImportPromise;
+  return getWalletConnectConnector();
 };
 
 export const getWalletConnectConnector = async (): Promise<WagmiConnector> => {
-  if (cachedWCConnector) {
-    return cachedWCConnector;
+  const connector = config.connectors.find((item) => item.id === "walletConnect");
+  if (!connector) {
+    throw new Error("WalletConnect connector is not configured.");
   }
 
-  if (!walletConnectConnectorPromise) {
-    walletConnectConnectorPromise = (preloadWalletConnect() ?? import("wagmi/connectors")).then(({ walletConnect }) => {
-      cachedWCConnector = config._internal.connectors.setup(
-        walletConnect({
-          projectId: WALLETCONNECT_PROJECT_ID,
-        }),
-      ) as WagmiConnector;
-
-      return cachedWCConnector;
-    });
-  }
-
-  return walletConnectConnectorPromise;
+  return connector as WagmiConnector;
 };
 
 export const getPreferredConnector = async (): Promise<WagmiConnector> => {

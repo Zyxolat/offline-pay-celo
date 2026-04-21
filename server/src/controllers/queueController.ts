@@ -2,7 +2,21 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { queueService } from '../services/queueService.js';
 import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse } from '../utils/validators.js';
+import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
+import { z } from 'zod';
+
+const addToQueueSchema = z.object({
+  recipient: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  amount: z.string().trim().min(1).optional(),
+  currency: z.enum(['cUSD', 'CELO']).optional(),
+  signedTx: z.string().trim().min(1),
+  note: z.string().trim().max(500).optional(),
+  timestamp: z.union([z.string(), z.date()]).optional(),
+});
+
+const syncQueueSchema = z.object({
+  queueIds: z.array(z.string().trim().min(1)).optional(),
+});
 
 export const queueController = {
   async addToQueue(req: AuthRequest, res: Response) {
@@ -11,11 +25,11 @@ export const queueController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { recipient, amount, currency, signedTx, note, timestamp } = req.body;
-
-      if (!signedTx) {
-        return errorResponse(res, 'Missing signed transaction', 400);
+      const payload = validateWithSchema(res, addToQueueSchema, req.body);
+      if (!payload) {
+        return;
       }
+      const { signedTx } = payload;
 
       const result = await queueService.addToQueue(req.user.userId, signedTx);
 
@@ -47,7 +61,11 @@ export const queueController = {
         return errorResponse(res, 'Unauthorized', 401);
       }
 
-      const { queueIds } = req.body;
+      const payload = validateWithSchema(res, syncQueueSchema, req.body ?? {});
+      if (!payload) {
+        return;
+      }
+      const { queueIds } = payload;
 
       const result = await queueService.syncQueue(req.user.userId, queueIds);
       successResponse(res, result);
