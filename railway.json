@@ -4,6 +4,6 @@
     "buildCommand": "npm --prefix server install && npm --prefix server run build"
   },
   "deploy": {
-    "startCommand": "node server/dist/app.js"
+    "startCommand": "npm --prefix server run migrate && node server/dist/app.js"
   }
 }
