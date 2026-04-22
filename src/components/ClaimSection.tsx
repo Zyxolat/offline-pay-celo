@@ -1,5 +1,6 @@
 import type { TimeLockPaymentView } from "@/utils/contract";
 import { Button } from "@/components/ui/button";
+import { isPaymentClaimable } from "@/utils/contract";
 
 interface ClaimSectionProps {
   currentTime: number;
@@ -30,24 +31,24 @@ export const ClaimSection = ({
     );
   }
 
-  const deadlineMs = transaction.deadline * 1000;
-  const isLocked = transaction.status === "locked";
+  const releaseTimeMs = transaction.releaseTime * 1000;
+  const isClaimable = isPaymentClaimable(currentTime, transaction.releaseTime);
   const isWorking = actionLoadingId === transaction.id;
   const statusLabel =
     transaction.status === "accepted"
-      ? "accepted"
+      ? "claimed"
       : transaction.status === "refunded"
         ? "refunded"
-        : transaction.status === "ready"
-          ? "ready to withdraw"
-          : "locked";
+        : isClaimable
+          ? "ready to claim"
+          : "pending";
 
   return (
     <section className="offlinepay-claim-card">
       <div className="offlinepay-section-heading offlinepay-section-heading--compact">
         <p className="offlinepay-eyebrow">Payment actions</p>
         <h3>Selected payment</h3>
-        <p>Recipients can withdraw only after the timer reaches zero. Senders can cancel only while funds are still locked.</p>
+        <p>Recipients can claim as soon as the release time passes. Senders can cancel only while funds are still pending.</p>
       </div>
 
       <dl className="offlinepay-claim-details">
@@ -64,8 +65,8 @@ export const ClaimSection = ({
           <dd>{transaction.sender}</dd>
         </div>
         <div>
-          <dt>Unlock time</dt>
-          <dd>{new Date(deadlineMs).toLocaleString()}</dd>
+          <dt>Release time</dt>
+          <dd>{new Date(releaseTimeMs).toLocaleString()}</dd>
         </div>
         <div>
           <dt>Status</dt>
@@ -73,7 +74,7 @@ export const ClaimSection = ({
         </div>
         <div>
           <dt>Countdown</dt>
-          <dd>{isLocked ? `${Math.max(0, Math.floor((deadlineMs - currentTime) / 1000))}s` : "0s"}</dd>
+          <dd>{isClaimable ? "0s" : `${Math.max(0, transaction.releaseTime - currentTime)}s`}</dd>
         </div>
       </dl>
 
@@ -83,7 +84,7 @@ export const ClaimSection = ({
 
       {transaction.canAccept ? (
         <Button onClick={() => onAccept(transaction.id)} disabled={isWorking} className="w-full">
-          {isWorking ? "Withdrawing..." : "Withdraw Payment"}
+          {isWorking ? "Claiming..." : "Claim"}
         </Button>
       ) : null}
 
@@ -99,9 +100,9 @@ export const ClaimSection = ({
             ? "Payment Accepted"
             : transaction.status === "refunded"
               ? "Payment Refunded"
-              : transaction.status === "ready"
+              : isClaimable
                 ? "Recipient Wallet Required"
-                : "Funds Still Locked"}
+                : "Pending"}
         </Button>
       ) : null}
 

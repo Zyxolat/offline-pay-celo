@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,6 +23,38 @@ import { AdminDashboard } from "./pages/AdminDashboard.tsx";
 import LearnMorePage from "./pages/LearnMore.tsx";
 import WithdrawPage from "./pages/Withdraw.tsx";
 import WalletProviders from "./providers/WalletProviders";
+import { logWalletConnection } from "@/lib/walletConnectionDebug";
+
+const WalletCallbackRoute = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    logWalletConnection("wallet.callback.route.entered", {
+      path: location.pathname,
+      search: location.search,
+      href: typeof window !== "undefined" ? window.location.href : null,
+    });
+
+    const timeout = window.setTimeout(() => {
+      logWalletConnection("wallet.callback.route.redirecting-home");
+      navigate("/", { replace: true });
+    }, 1500);
+
+    return () => window.clearTimeout(timeout);
+  }, [location.pathname, location.search, navigate]);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center px-6 text-center">
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-slate-900">Finishing wallet connection...</p>
+        <p className="text-sm text-slate-600">
+          If your wallet approved the request, OfflinePay will reconnect and return you to the app.
+        </p>
+      </div>
+    </div>
+  );
+};
 
 const SafeRoute = ({
   children,
@@ -59,6 +91,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/" element={renderSafeRoute("Landing", <Index />)} />
+      <Route path="/wc" element={renderSafeRoute("Wallet Callback", <WalletCallbackRoute />)} />
       <Route path="/learn-more" element={renderSafeRoute("Learn More", <LearnMorePage />)} />
       <Route path="/login" element={renderSafeRoute("Login Redirect", <Navigate to="/auth/login" replace />)} />
       <Route path="/signup" element={renderSafeRoute("Signup Redirect", <Navigate to="/auth/signup" replace />)} />

@@ -45,14 +45,41 @@ export interface TimeLockPaymentView {
   amount: string;
   amountWei: bigint;
   deadline: number;
+  releaseTime: number;
   claimed: boolean;
   refunded: boolean;
   status: TimeLockPaymentStatus;
   isSender: boolean;
   isRecipient: boolean;
+  isClaimable: boolean;
   canAccept: boolean;
   canRefund: boolean;
 }
+
+export const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
+export const CLAIMABILITY_BUFFER_SECONDS = 5;
+
+export const isPaymentClaimable = (
+  currentTime: number,
+  releaseTime: number,
+  bufferSeconds = CLAIMABILITY_BUFFER_SECONDS,
+) => currentTime >= Math.max(0, releaseTime - bufferSeconds);
+
+export const getPaymentStatus = (
+  payment: Pick<TimeLockPaymentView, "claimed" | "refunded">,
+  currentTime: number,
+  releaseTime: number,
+): TimeLockPaymentStatus => {
+  if (payment.refunded) {
+    return "refunded";
+  }
+
+  if (payment.claimed) {
+    return "accepted";
+  }
+
+  return isPaymentClaimable(currentTime, releaseTime) ? "ready" : "locked";
+};
 
 export interface CreatePaymentResult {
   hash: string;
@@ -312,23 +339,15 @@ const mapPayment = (
   },
   viewer: string,
 ): TimeLockPaymentView => {
-  const now = Math.floor(Date.now() / 1000);
-  const deadline = Number(payment.deadline);
+  const now = getCurrentUnixTime();
+  const releaseTime = Number(payment.deadline);
   const normalizedViewer = viewer ? getAddress(viewer) : "";
   const sender = getAddress(payment.sender);
   const recipient = getAddress(payment.recipient);
   const isSender = normalizedViewer === sender;
   const isRecipient = normalizedViewer === recipient;
-  const unlocked = now >= deadline;
-
-  let status: TimeLockPaymentStatus = "locked";
-  if (payment.refunded) {
-    status = "refunded";
-  } else if (payment.claimed) {
-    status = "accepted";
-  } else if (unlocked) {
-    status = "ready";
-  }
+  const isClaimable = isPaymentClaimable(now, releaseTime);
+  const status = getPaymentStatus(payment, now, releaseTime);
 
   return {
     id: paymentId,
@@ -336,14 +355,16 @@ const mapPayment = (
     recipient,
     amount: formatEther(payment.amount),
     amountWei: payment.amount,
-    deadline,
+    deadline: releaseTime,
+    releaseTime,
     claimed: payment.claimed,
     refunded: payment.refunded,
     status,
     isSender,
     isRecipient,
-    canAccept: isRecipient && !payment.claimed && !payment.refunded && unlocked,
-    canRefund: isSender && !payment.claimed && !payment.refunded && !unlocked,
+    isClaimable,
+    canAccept: isRecipient && !payment.claimed && !payment.refunded && isClaimable,
+    canRefund: isSender && !payment.claimed && !payment.refunded && !isClaimable,
   };
 };
 
@@ -366,6 +387,8 @@ export const getPayment = async (paymentId: number, viewerAddress = ""): Promise
     throw new Error(getFriendlyErrorMessage(error));
   }
 };
+
+export const getLatestPaymentForViewer = async (paymentId: number, viewerAddress = "") => getPayment(paymentId, viewerAddress);
 
 export const getPaymentsForAddress = async (address: string): Promise<TimeLockPaymentView[]> => {
   if (!address || !isAddress(address)) {
@@ -474,7 +497,21 @@ export const estimatePaymentActionGas = async (paymentId: number, action: "accep
 
 export const acceptPayment = async (paymentId: number): Promise<ContractActionResult> => {
   try {
-    const { signer } = await connectWallet();
+    const { signer, address } = await connectWallet();
+    const latestPayment = await getLatestPaymentForViewer(paymentId, address);
+
+    if (latestPayment.claimed) {
+      throw new Error("This payment has already been claimed.");
+    }
+
+    if (latestPayment.refunded) {
+      throw new Error("This payment was refunded and can no longer be claimed.");
+    }
+
+    if (!latestPayment.isRecipient) {
+      throw new Error("Only the intended recipient can claim this payment.");
+    }
+
     const contract = getContract(signer);
     const tx = await contract.acceptPayment(paymentId);
     const receipt = await tx.wait();
@@ -489,7 +526,21 @@ export const acceptPayment = async (paymentId: number): Promise<ContractActionRe
 
 export const refundPayment = async (paymentId: number): Promise<ContractActionResult> => {
   try {
-    const { signer } = await connectWallet();
+    const { signer, address } = await connectWallet();
+    const latestPayment = await getLatestPaymentForViewer(paymentId, address);
+
+    if (latestPayment.claimed) {
+      throw new Error("This payment has already been claimed.");
+    }
+
+    if (latestPayment.refunded) {
+      throw new Error("This payment has already been refunded.");
+    }
+
+    if (!latestPayment.isSender) {
+      throw new Error("Only the original sender can refund this payment.");
+    }
+
     const contract = getContract(signer);
     const tx = await contract.refundPayment(paymentId);
     const receipt = await tx.wait();

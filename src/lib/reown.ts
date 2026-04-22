@@ -6,13 +6,22 @@ import { getAddress } from "viem";
 import { getAccount, watchAccount } from "wagmi/actions";
 
 import { getWalletConnectProjectId } from "@/config/env";
+import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 const projectId = getWalletConnectProjectId();
+
+const resolveWalletMetadataUrl = () => {
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+
+  return "https://offline-pay-celo.vercel.app";
+};
 
 export const walletMetadata = {
   name: "OfflinePay",
   description: "Offline payments on Celo",
-  url: "https://offline-pay-celo.vercel.app",
+  url: resolveWalletMetadataUrl(),
   icons: ["https://offline-pay-celo.vercel.app/favicon.ico"],
 } as const;
 
@@ -45,6 +54,11 @@ const reownSingleton =
       features: {
         analytics: true,
       },
+    });
+
+    logWalletConnection("appkit.initialized", {
+      metadataUrl: walletMetadata.url,
+      currentOrigin: typeof window !== "undefined" ? window.location.origin : "server",
     });
 
     const singleton = {

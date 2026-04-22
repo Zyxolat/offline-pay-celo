@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   acceptPayment,
@@ -6,6 +6,7 @@ import {
   getPaymentsForAddress,
   getWalletBalance,
   refundPayment,
+  subscribeToWalletEvents,
   type TimeLockPaymentView,
 } from "@/utils/contract";
 import { useCelo } from "@/providers/CeloProvider";
@@ -33,10 +34,12 @@ export const useTimeLockPayments = () => {
   const [actingOnPaymentId, setActingOnPaymentId] = useState<number | null>(null);
   const [lastTransactionHash, setLastTransactionHash] = useState("");
   const [error, setError] = useState("");
+  const refreshInFlightRef = useRef(false);
 
   const refresh = useCallback(
-    async (addressOverride?: string) => {
+    async (addressOverride?: string, options?: { silent?: boolean }) => {
       const targetAddress = addressOverride || address;
+      const silent = options?.silent ?? false;
 
       if (!targetAddress || isWrongNetwork) {
         setPayments([]);
@@ -45,7 +48,14 @@ export const useTimeLockPayments = () => {
         return;
       }
 
-      setLoading(true);
+      if (refreshInFlightRef.current) {
+        return;
+      }
+
+      refreshInFlightRef.current = true;
+      if (!silent) {
+        setLoading(true);
+      }
 
       try {
         const [nextPayments, nextBalance] = await Promise.all([
@@ -58,7 +68,10 @@ export const useTimeLockPayments = () => {
       } catch (refreshError) {
         setError(refreshError instanceof Error ? refreshError.message : "Unable to load contract payments.");
       } finally {
-        setLoading(false);
+        refreshInFlightRef.current = false;
+        if (!silent) {
+          setLoading(false);
+        }
       }
     },
     [address, isWrongNetwork],
@@ -95,28 +108,24 @@ export const useTimeLockPayments = () => {
   }, [address, isWrongNetwork, refresh]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setPayments((currentPayments) => currentPayments.map((payment) => {
-        const unlocked = Math.floor(Date.now() / 1000) >= payment.deadline;
-        const status = payment.refunded
-          ? "refunded"
-          : payment.claimed
-            ? "accepted"
-            : unlocked
-              ? "ready"
-              : "locked";
+    if (!address || isWrongNetwork) {
+      return () => undefined;
+    }
 
-        return {
-          ...payment,
-          status,
-          canAccept: payment.isRecipient && !payment.claimed && !payment.refunded && unlocked,
-          canRefund: payment.isSender && !payment.claimed && !payment.refunded && !unlocked,
-        };
-      }));
-    }, 1000);
+    const interval = window.setInterval(() => {
+      void refresh(address, { silent: true });
+    }, 5000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [address, isWrongNetwork, refresh]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToWalletEvents(() => {
+      void refresh(undefined, { silent: true });
+    });
+
+    return unsubscribe;
+  }, [refresh]);
 
   const handleConnectWallet = useCallback(async () => {
     try {
@@ -142,8 +151,9 @@ export const useTimeLockPayments = () => {
         await refresh();
         return result;
       } catch (acceptError) {
-        const message = acceptError instanceof Error ? acceptError.message : "Unable to accept this payment.";
+        const message = acceptError instanceof Error ? acceptError.message : "Unable to claim this payment.";
         setError(message);
+        await refresh();
         throw new Error(message);
       } finally {
         setActingOnPaymentId(null);
@@ -165,6 +175,7 @@ export const useTimeLockPayments = () => {
       } catch (refundError) {
         const message = refundError instanceof Error ? refundError.message : "Unable to refund this payment.";
         setError(message);
+        await refresh();
         throw new Error(message);
       } finally {
         setActingOnPaymentId(null);

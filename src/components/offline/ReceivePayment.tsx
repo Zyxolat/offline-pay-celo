@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/sonner";
 import { useTimeLockPayments } from "@/hooks/useTimeLockPayments";
 import { copyTextToClipboard, formatWalletAddress } from "@/lib/wallet";
+import { getCurrentUnixTime, isPaymentClaimable } from "@/utils/contract";
 
 export const ReceivePayment = () => {
   const {
@@ -25,10 +26,10 @@ export const ReceivePayment = () => {
     refresh,
     acceptPayment,
   } = useTimeLockPayments();
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [currentTime, setCurrentTime] = useState(() => getCurrentUnixTime());
 
   useEffect(() => {
-    const interval = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    const interval = window.setInterval(() => setCurrentTime(getCurrentUnixTime()), 1000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -38,12 +39,12 @@ export const ReceivePayment = () => {
   );
 
   const formatCountdown = (deadline: number) => {
-    const remainingMs = deadline * 1000 - currentTime;
-    if (remainingMs <= 0) {
-      return "Ready to withdraw";
+    const remainingSeconds = deadline - currentTime;
+    if (remainingSeconds <= 0) {
+      return "Ready to claim";
     }
 
-    const totalSeconds = Math.floor(remainingMs / 1000);
+    const totalSeconds = remainingSeconds;
     const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
     const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
     const seconds = String(totalSeconds % 60).padStart(2, "0");
@@ -82,11 +83,12 @@ export const ReceivePayment = () => {
   };
 
   const handleAccept = async (paymentId: number) => {
+    const loadingToastId = toast.loading("Claim transaction pending...");
     try {
       await acceptPayment(paymentId);
-      toast.success("Payment accepted.");
+      toast.success("Payment claimed.", { id: loadingToastId });
     } catch (acceptError) {
-      toast.error(acceptError instanceof Error ? acceptError.message : "Unable to accept payment.");
+      toast.error(acceptError instanceof Error ? acceptError.message : "Unable to claim payment.", { id: loadingToastId });
     }
   };
 
@@ -149,40 +151,54 @@ export const ReceivePayment = () => {
             No pending contract payments for this wallet right now.
           </div>
         ) : (
-          incomingPayments.map((payment) => (
-            <div key={payment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">Payment #{payment.id}</p>
-                  <p className="text-xs text-slate-500">{payment.amount} CELO from {formatWalletAddress(payment.sender, 8, 6)}</p>
+          incomingPayments.map((payment) => {
+            const claimableNow = isPaymentClaimable(currentTime, payment.releaseTime);
+            const canShowClaim = payment.isRecipient && !payment.claimed && !payment.refunded && claimableNow;
+            const statusLabel = payment.claimed
+              ? "Claimed"
+              : payment.refunded
+                ? "Refunded"
+                : claimableNow
+                  ? "Ready to claim"
+                  : "Pending";
+
+            return (
+              <div key={payment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Payment #{payment.id}</p>
+                    <p className="text-xs text-slate-500">{payment.amount} CELO from {formatWalletAddress(payment.sender, 8, 6)}</p>
+                  </div>
+                  <span className="text-xs uppercase tracking-wide text-slate-500">{statusLabel}</span>
                 </div>
-                <span className="text-xs uppercase tracking-wide text-slate-500">{payment.status}</span>
-              </div>
 
-              <div className="mt-3 space-y-1 text-sm text-slate-600">
-                <p>Unlock time: {new Date(payment.deadline * 1000).toLocaleString()}</p>
-                <p>Countdown: {payment.status === "locked" ? formatCountdown(payment.deadline) : "Ready"}</p>
-                <p>Sender: {payment.sender}</p>
-                <p>Recipient: {payment.recipient}</p>
-              </div>
+                <div className="mt-3 space-y-1 text-sm text-slate-600">
+                  <p>Release time: {new Date(payment.releaseTime * 1000).toLocaleString()}</p>
+                  <p>Countdown: {claimableNow ? "Ready to claim" : formatCountdown(payment.releaseTime)}</p>
+                  <p>Sender: {payment.sender}</p>
+                  <p>Recipient: {payment.recipient}</p>
+                </div>
 
-              <div className="mt-4">
-                <Button
-                  onClick={() => handleAccept(payment.id)}
-                  disabled={!payment.canAccept || actingOnPaymentId === payment.id}
-                  className="h-11 rounded-xl bg-emerald-500 text-white hover:bg-emerald-400"
-                >
-                  <CheckCircle2 size={16} />
-                  {actingOnPaymentId === payment.id ? "Accepting..." : payment.canAccept ? "Withdraw Payment" : payment.status === "locked" ? "Locked Until Timer Ends" : "Unavailable"}
-                </Button>
+                {canShowClaim ? (
+                  <div className="mt-4">
+                    <Button
+                      onClick={() => handleAccept(payment.id)}
+                      disabled={actingOnPaymentId === payment.id}
+                      className="h-11 rounded-xl bg-emerald-500 text-white hover:bg-emerald-400"
+                    >
+                      <CheckCircle2 size={16} />
+                      {actingOnPaymentId === payment.id ? "Claiming..." : "Claim"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-        Recipients can withdraw funds only after the timer has fully expired and the intended wallet is connected on Celo Mainnet.
+        Recipients can claim funds as soon as the release time passes and the intended wallet is connected on Celo Mainnet.
       </div>
     </Card>
   );

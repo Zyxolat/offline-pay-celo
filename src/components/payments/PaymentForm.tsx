@@ -4,6 +4,7 @@ import { Loader2, TimerReset } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { createPayment, estimateCreatePaymentGas } from "@/utils/contract";
 
@@ -22,20 +23,30 @@ type FeedbackState =
 export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) => {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [durationHours, setDurationHours] = useState("24");
+  const [durationValue, setDurationValue] = useState("24");
+  const [durationUnit, setDurationUnit] = useState<"minutes" | "hours">("hours");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [gasEstimate, setGasEstimate] = useState("");
   const [estimatingGas, setEstimatingGas] = useState(false);
 
-  const parsedDurationHours = Number(durationHours.trim());
-  const unlockAt = useMemo(() => {
-    if (Number.isNaN(parsedDurationHours) || parsedDurationHours <= 0) {
+  const parsedDurationValue = Number(durationValue.trim());
+  const durationInSeconds = useMemo(() => {
+    if (Number.isNaN(parsedDurationValue) || parsedDurationValue <= 0) {
       return null;
     }
 
-    return new Date(Date.now() + parsedDurationHours * 3600 * 1000);
-  }, [parsedDurationHours]);
+    return durationUnit === "minutes"
+      ? Math.floor(parsedDurationValue * 60)
+      : Math.floor(parsedDurationValue * 3600);
+  }, [durationUnit, parsedDurationValue]);
+  const unlockAt = useMemo(() => {
+    if (durationInSeconds === null || durationInSeconds <= 0) {
+      return null;
+    }
+
+    return new Date(Date.now() + durationInSeconds * 1000);
+  }, [durationInSeconds]);
 
   useEffect(() => {
     const trimmedRecipient = recipient.trim();
@@ -48,8 +59,8 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       !isAddress(trimmedRecipient) ||
       Number.isNaN(Number(trimmedAmount)) ||
       Number(trimmedAmount) <= 0 ||
-      Number.isNaN(parsedDurationHours) ||
-      parsedDurationHours <= 0
+      durationInSeconds === null ||
+      durationInSeconds <= 0
     ) {
       setGasEstimate("");
       return;
@@ -61,7 +72,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       try {
         const estimate = await estimateCreatePaymentGas(
           trimmedRecipient,
-          Math.floor(parsedDurationHours * 3600),
+          durationInSeconds,
           trimmedAmount,
         );
         setGasEstimate(estimate.feeCelo);
@@ -73,7 +84,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
     }, 350);
 
     return () => window.clearTimeout(timeoutId);
-  }, [amount, disabled, parsedDurationHours, recipient]);
+  }, [amount, disabled, durationInSeconds, recipient]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -107,8 +118,8 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
       return;
     }
 
-    if (!durationHours.trim() || Number.isNaN(parsedDurationHours) || parsedDurationHours <= 0) {
-      const message = "Enter a lock duration greater than 0 hours.";
+    if (!durationValue.trim() || durationInSeconds === null || durationInSeconds <= 0) {
+      const message = `Enter a lock duration greater than 0 ${durationUnit}.`;
       setFeedback({ type: "error", text: message });
       toast.error("Payment failed", { description: message });
       return;
@@ -118,7 +129,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
     setFeedback(null);
 
     try {
-      const { hash, paymentId } = await createPayment(trimmedRecipient, Math.floor(parsedDurationHours * 3600), trimmedAmount);
+      const { hash, paymentId } = await createPayment(trimmedRecipient, durationInSeconds, trimmedAmount);
       const successMessage = paymentId === null
         ? `Payment created. Transaction hash: ${hash}`
         : `Payment #${paymentId} created successfully. Transaction hash: ${hash}`;
@@ -132,7 +143,8 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
 
       setRecipient("");
       setAmount("");
-      setDurationHours("24");
+      setDurationValue("24");
+      setDurationUnit("hours");
       setGasEstimate("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create the payment right now. Please try again.";
@@ -179,23 +191,34 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
             className="offlinepay-input"
           />
           <span className="offlinepay-input-group__hint">
-            This CELO amount stays locked until the countdown finishes and the recipient withdraws it.
+            This CELO amount stays locked until the countdown finishes and the recipient claims it.
           </span>
         </label>
         <label className="offlinepay-input-group" htmlFor="celo-duration">
-          <span className="offlinepay-input-group__label">Lock duration (hours)</span>
-          <Input
-            id="celo-duration"
-            type="number"
-            min="1"
-            step="1"
-            placeholder="24"
-            value={durationHours}
-            onChange={(event) => setDurationHours(event.target.value)}
-            className="offlinepay-input"
-          />
+          <span className="offlinepay-input-group__label">Lock duration</span>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+            <Input
+              id="celo-duration"
+              type="number"
+              min="1"
+              step="1"
+              placeholder={durationUnit === "minutes" ? "30" : "24"}
+              value={durationValue}
+              onChange={(event) => setDurationValue(event.target.value)}
+              className="offlinepay-input"
+            />
+            <Select value={durationUnit} onValueChange={(value: "minutes" | "hours") => setDurationUnit(value)}>
+              <SelectTrigger className="offlinepay-input">
+                <SelectValue placeholder="Select unit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="minutes">Minutes</SelectItem>
+                <SelectItem value="hours">Hours</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <span className="offlinepay-input-group__hint">
-            Funds remain inaccessible until this lock period has fully expired.
+            Choose an exact delay like 5 minutes, 30 minutes, 1 hour, or 2 hours.
           </span>
         </label>
       </div>
@@ -207,7 +230,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
         </div>
         <p className="mt-2">Locked amount: {amount || "0"} CELO</p>
         <p className="mt-1">Recipient: {recipient || "Waiting for recipient address"}</p>
-        <p className="mt-1">Unlock time: {unlockAt ? unlockAt.toLocaleString() : "Set a valid lock duration"}</p>
+        <p className="mt-1">Release time: {unlockAt ? unlockAt.toLocaleString() : "Set a valid lock duration"}</p>
         <p className="mt-3 flex items-center gap-2 text-slate-600">
           {estimatingGas ? <Loader2 size={14} className="animate-spin" /> : null}
           Estimated gas fee: {gasEstimate ? `${gasEstimate} CELO` : "Connect wallet and complete the form to estimate"}

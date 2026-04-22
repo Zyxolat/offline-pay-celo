@@ -231,8 +231,12 @@ function registerGlobalErrorHandlers() {
   }
 
   hasRegisteredGlobalErrorHandlers = true;
-  process.on('uncaughtException', console.error);
-  process.on('unhandledRejection', console.error);
+  process.on('uncaughtException', (error) => {
+    log('ERROR', 'Uncaught exception', normalizeError(error));
+  });
+  process.on('unhandledRejection', (reason) => {
+    log('ERROR', 'Unhandled promise rejection', normalizeError(reason));
+  });
 }
 
 export function startServer() {
@@ -336,7 +340,7 @@ export function bootServer() {
   registerGlobalErrorHandlers();
 
   if (serverBootstrapState.__server_started__) {
-    console.log('Server already started - skipping duplicate init');
+    log('WARN', 'Server already started; skipping duplicate init');
     return server;
   }
 

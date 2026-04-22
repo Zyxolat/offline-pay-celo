@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/sonner";
 import { useTimeLockPayments } from "@/hooks/useTimeLockPayments";
 import { formatWalletAddress } from "@/lib/wallet";
-import { estimatePaymentActionGas } from "@/utils/contract";
+import { estimatePaymentActionGas, getCurrentUnixTime } from "@/utils/contract";
 
 export const SendPayment = () => {
   const {
@@ -36,12 +36,12 @@ export const SendPayment = () => {
     switchingNetwork,
   } = useTimeLockPayments();
   const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null);
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [currentTime, setCurrentTime] = useState(() => getCurrentUnixTime());
   const [selectedActionGas, setSelectedActionGas] = useState("");
   const [estimatingActionGas, setEstimatingActionGas] = useState(false);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    const interval = window.setInterval(() => setCurrentTime(getCurrentUnixTime()), 1000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -108,20 +108,22 @@ export const SendPayment = () => {
   };
 
   const handleAccept = async (paymentId: number) => {
+    const loadingToastId = toast.loading("Claim transaction pending...");
     try {
       await acceptPayment(paymentId);
-      toast.success("Payment accepted.");
+      toast.success("Payment claimed.", { id: loadingToastId });
     } catch (acceptError) {
-      toast.error(acceptError instanceof Error ? acceptError.message : "Unable to accept payment.");
+      toast.error(acceptError instanceof Error ? acceptError.message : "Unable to claim payment.", { id: loadingToastId });
     }
   };
 
   const handleRefund = async (paymentId: number) => {
+    const loadingToastId = toast.loading("Refund transaction pending...");
     try {
       await refundPayment(paymentId);
-      toast.success("Refund completed.");
+      toast.success("Refund completed.", { id: loadingToastId });
     } catch (refundError) {
-      toast.error(refundError instanceof Error ? refundError.message : "Unable to refund payment.");
+      toast.error(refundError instanceof Error ? refundError.message : "Unable to refund payment.", { id: loadingToastId });
     }
   };
 

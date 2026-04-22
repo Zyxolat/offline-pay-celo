@@ -27,15 +27,15 @@ const formatCountdown = (remainingMs: number) => {
 
 export const PaymentCard = ({ transaction, currentTime, isSelected = false, onSelect }: PaymentCardProps) => {
   const deadlineMs = transaction.deadline * 1000;
-  const countdown = formatCountdown(deadlineMs - currentTime);
+  const countdown = formatCountdown(Math.max(0, transaction.deadline - currentTime) * 1000);
   const statusLabel =
     transaction.status === "accepted"
-      ? "Accepted"
+      ? "Claimed"
       : transaction.status === "refunded"
         ? "Refunded"
         : transaction.status === "ready"
-          ? "Ready"
-          : "Locked";
+          ? "Ready to claim"
+          : "Pending";
 
   return (
     <button
@@ -68,7 +68,7 @@ export const PaymentCard = ({ transaction, currentTime, isSelected = false, onSe
           <dd>{transaction.isSender ? transaction.recipient : transaction.sender}</dd>
         </div>
         <div>
-          <dt>Unlock time</dt>
+          <dt>Release time</dt>
           <dd>{new Date(deadlineMs).toLocaleString()}</dd>
         </div>
         <div>
