@@ -8,14 +8,22 @@ import {
 import { useAccount, useSwitchChain } from "wagmi";
 
 import WrongNetworkModal from "@/components/web3/WrongNetworkModal";
+import { type WalletConnectionStatus, useWalletConnection } from "@/hooks/useWalletConnection";
 import { CELO_MAINNET_CHAIN_ID, type OfflinePayWalletState } from "@/config/celo";
-import { getWalletConnectionErrorMessage, requestWalletConnection } from "@/lib/reown";
 import { readWalletState } from "@/utils/contract";
+import type { MobileWalletEnvironment } from "@/lib/wallet";
 
 interface CeloContextValue extends OfflinePayWalletState {
   connecting: boolean;
+  connectionError: string;
+  connectionHint: string;
+  connectionStatus: WalletConnectionStatus;
+  mobileWallet: MobileWalletEnvironment;
   switchingNetwork: boolean;
   switchError: string;
+  retryConnection: () => Promise<string>;
+  openWalletManually: () => Promise<void>;
+  canOpenWalletManually: boolean;
   connect: () => Promise<string>;
   refreshWallet: (force?: boolean) => Promise<void>;
   switchNetwork: () => Promise<void>;
@@ -24,8 +32,9 @@ interface CeloContextValue extends OfflinePayWalletState {
 const CeloContext = createContext<CeloContextValue | null>(null);
 
 export const CeloProvider = ({ children }: { children: ReactNode }) => {
-  const { address, chainId, isConnected, isConnecting } = useAccount();
+  const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: switchingNetwork, error: switchChainError } = useSwitchChain();
+  const walletConnection = useWalletConnection();
 
   const walletState = useMemo<OfflinePayWalletState>(
     () => ({
@@ -45,16 +54,8 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const handleConnect = useCallback(async () => {
-    try {
-      if (isConnected && address) {
-        return address;
-      }
-
-      return await requestWalletConnection();
-    } catch (error) {
-      throw new Error(getWalletConnectionErrorMessage(error));
-    }
-  }, [address, isConnected]);
+    return walletConnection.connect();
+  }, [walletConnection]);
 
   const handleSwitchNetwork = useCallback(async () => {
     try {
@@ -71,14 +72,21 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
   const value = useMemo<CeloContextValue>(
     () => ({
       ...walletState,
-      connecting: isConnecting,
+      connecting: walletConnection.status === "connecting",
+      connectionError: walletConnection.error,
+      connectionHint: walletConnection.hint,
+      connectionStatus: walletConnection.status,
+      mobileWallet: walletConnection.browser,
       switchingNetwork,
       switchError,
+      retryConnection: walletConnection.retryConnection,
+      openWalletManually: walletConnection.openWalletManually,
+      canOpenWalletManually: walletConnection.canOpenWalletManually,
       connect: handleConnect,
       refreshWallet,
       switchNetwork: handleSwitchNetwork,
     }),
-    [handleConnect, handleSwitchNetwork, isConnecting, refreshWallet, switchError, switchingNetwork, walletState],
+    [handleConnect, handleSwitchNetwork, refreshWallet, switchError, switchingNetwork, walletConnection, walletState],
   );
 
   return (

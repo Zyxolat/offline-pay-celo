@@ -8,7 +8,23 @@ import { useTimeLockPayments } from "@/hooks/useTimeLockPayments";
 import { copyTextToClipboard, formatWalletAddress } from "@/lib/wallet";
 
 export const ReceivePayment = () => {
-  const { account, payments, loading, connecting, actingOnPaymentId, error, connectWallet, refresh, acceptPayment } = useTimeLockPayments();
+  const {
+    account,
+    payments,
+    loading,
+    connecting,
+    connectionError,
+    connectionHint,
+    connectionStatus,
+    retryConnection,
+    openWalletManually,
+    canOpenWalletManually,
+    actingOnPaymentId,
+    error,
+    connectWallet,
+    refresh,
+    acceptPayment,
+  } = useTimeLockPayments();
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   useEffect(() => {
@@ -74,6 +90,14 @@ export const ReceivePayment = () => {
     }
   };
 
+  const connectLabel = connecting
+    ? "Connecting..."
+    : account
+      ? formatWalletAddress(account, 10, 8)
+      : connectionStatus === "failed"
+        ? "Retry Connection"
+        : "Connect";
+
   return (
     <Card className="space-y-4 border-slate-200 bg-white p-6 shadow-lg shadow-slate-200/50">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,9 +108,9 @@ export const ReceivePayment = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={handleConnectWallet} disabled={connecting} className="h-11 rounded-xl bg-slate-950 text-white hover:bg-slate-800">
+          <Button onClick={handleConnectWallet} className="h-11 rounded-xl bg-slate-950 text-white hover:bg-slate-800">
             <ArrowRight size={16} />
-            {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect"}
+            {connectLabel}
           </Button>
           <Button onClick={handleCopyAddress} variant="outline" className="h-11 rounded-xl border-slate-200" disabled={!account}>
             <Copy size={16} />
@@ -98,6 +122,22 @@ export const ReceivePayment = () => {
           </Button>
         </div>
       </div>
+
+      {connectionStatus === "connecting" ? <p className="text-sm text-slate-500">{connectionHint}</p> : null}
+
+      {connectionStatus === "failed" ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <span>{connectionError}</span>
+          <Button type="button" size="sm" onClick={() => void retryConnection()}>
+            Retry connection
+          </Button>
+          {canOpenWalletManually ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => void openWalletManually()}>
+              Open wallet manually
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

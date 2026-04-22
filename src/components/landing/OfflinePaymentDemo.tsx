@@ -15,6 +15,12 @@ export const OfflinePaymentDemo = () => {
     account,
     payments,
     connectWallet,
+    connectionError,
+    connectionHint,
+    connectionStatus,
+    retryConnection,
+    openWalletManually,
+    canOpenWalletManually,
     refresh,
     acceptPayment,
     refundPayment,
@@ -75,6 +81,14 @@ export const OfflinePaymentDemo = () => {
     }
   };
 
+  const connectLabel = connecting
+    ? "Connecting..."
+    : account
+      ? formatWalletAddress(account, 10, 8)
+      : connectionStatus === "failed"
+        ? "Retry Connection"
+        : "Connect Wallet";
+
   return (
     <section className="offlinepay-demo-section">
       <div className="offlinepay-demo-shell">
@@ -111,10 +125,27 @@ export const OfflinePaymentDemo = () => {
               Connect the wallet that should create, accept, or refund payments using the deployed OfflinePay contract on Celo Mainnet.
             </p>
 
-            <Button onClick={handleConnectWallet} variant={account ? "secondary" : "default"} className="w-full" disabled={connecting}>
+            <Button onClick={handleConnectWallet} variant={account ? "secondary" : "default"} className="w-full">
               <Wallet size={18} />
-              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect Wallet"}
+              {connectLabel}
             </Button>
+
+            {connectionStatus === "connecting" ? <p style={{ marginTop: "0.75rem" }}>{connectionHint}</p> : null}
+            {connectionStatus === "failed" ? (
+              <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.75rem" }}>
+                <p>{connectionError}</p>
+                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <Button type="button" size="sm" onClick={() => void retryConnection()}>
+                    Retry connection
+                  </Button>
+                  {canOpenWalletManually ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => void openWalletManually()}>
+                      Open wallet manually
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             {error ? <p style={{ marginTop: "0.75rem" }}>{error}</p> : null}
           </div>

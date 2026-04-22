@@ -33,7 +33,7 @@ import { useTimeLockPayments } from '@/hooks/useTimeLockPayments';
 
 export const ReceivePage = () => {
   const navigate = useNavigate();
-  const { account, connectWallet, connecting } = useTimeLockPayments();
+  const { account, connectWallet, connecting, connectionStatus, connectionError, connectionHint, retryConnection, openWalletManually, canOpenWalletManually } = useTimeLockPayments();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
 
@@ -100,6 +100,14 @@ export const ReceivePage = () => {
     }
   };
 
+  const connectLabel = connecting
+    ? "Connecting..."
+    : account
+      ? "Wallet Connected"
+      : connectionStatus === "failed"
+        ? "Retry Connection"
+        : "Connect Wallet";
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_50%,_#f8fafc_100%)] pb-20">
       <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
@@ -143,7 +151,7 @@ export const ReceivePage = () => {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Button onClick={() => void connectWallet()} className="h-12 rounded-xl bg-slate-950 text-white hover:bg-slate-800">
                     {connecting ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
-                    {account ? 'Wallet Connected' : 'Connect Wallet'}
+                    {connectLabel}
                   </Button>
                   <Button onClick={handleCopy} variant="outline" className="h-12 rounded-xl border-slate-200">
                     <Copy size={16} />
@@ -154,6 +162,22 @@ export const ReceivePage = () => {
                     Share Address
                   </Button>
                 </div>
+
+                {connectionStatus === "connecting" ? <p className="text-sm text-slate-500">{connectionHint}</p> : null}
+
+                {connectionStatus === "failed" ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                    <span>{connectionError}</span>
+                    <Button type="button" size="sm" onClick={() => void retryConnection()}>
+                      Retry connection
+                    </Button>
+                    {canOpenWalletManually ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => void openWalletManually()}>
+                        Open wallet manually
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {copyFeedback && (
                   <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">

@@ -18,6 +18,12 @@ export const SendPayment = () => {
     walletBalance,
     loading,
     connecting,
+    connectionError,
+    connectionHint,
+    connectionStatus,
+    retryConnection,
+    openWalletManually,
+    canOpenWalletManually,
     actingOnPaymentId,
     lastTransactionHash,
     error,
@@ -84,6 +90,14 @@ export const SendPayment = () => {
     }
   };
 
+  const connectLabel = connecting
+    ? "Connecting..."
+    : account
+      ? formatWalletAddress(account, 10, 8)
+      : connectionStatus === "failed"
+        ? "Retry Connection"
+        : "Connect Wallet";
+
   const handleRefresh = async () => {
     try {
       await refresh();
@@ -129,9 +143,9 @@ export const SendPayment = () => {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleConnectWallet} className="rounded-xl bg-white text-slate-950 hover:bg-slate-100" disabled={connecting}>
+            <Button onClick={handleConnectWallet} className="rounded-xl bg-white text-slate-950 hover:bg-slate-100">
               <Wallet size={16} />
-              {connecting ? "Connecting..." : account ? formatWalletAddress(account, 10, 8) : "Connect Wallet"}
+              {connectLabel}
             </Button>
             {isWrongNetwork ? (
               <Button
@@ -148,6 +162,28 @@ export const SendPayment = () => {
               Refresh
             </Button>
           </div>
+
+          {connectionStatus === "connecting" ? <p className="text-sm text-slate-200">{connectionHint}</p> : null}
+
+          {connectionStatus === "failed" ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+              <span>{connectionError}</span>
+              <Button type="button" size="sm" onClick={() => void retryConnection()} className="bg-white text-slate-950 hover:bg-slate-100">
+                Retry connection
+              </Button>
+              {canOpenWalletManually ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void openWalletManually()}
+                  className="border-white/20 bg-white/5 text-white hover:bg-white/10"
+                >
+                  Open wallet manually
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/10 p-4">

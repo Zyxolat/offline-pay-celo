@@ -19,7 +19,7 @@ interface WithdrawResult {
 
 export const WithdrawPage = () => {
   const navigate = useNavigate();
-  const { account, walletBalance, connectWallet, connecting } = useTimeLockPayments();
+  const { account, walletBalance, connectWallet, connecting, connectionStatus, connectionError, connectionHint, retryConnection, openWalletManually, canOpenWalletManually } = useTimeLockPayments();
   const [destinationAddress, setDestinationAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
@@ -102,6 +102,10 @@ export const WithdrawPage = () => {
     }
   };
 
+  const walletLabel = connecting
+    ? 'Connecting...'
+    : account || (connectionStatus === 'failed' ? 'Retry wallet connection' : 'Connect your Celo Mainnet wallet');
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_45%,_#f8fafc_100%)] pb-20">
       <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
@@ -130,7 +134,7 @@ export const WithdrawPage = () => {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Wallet address</p>
                 <p className="mt-2 break-all font-mono text-sm text-slate-900">
-                  {connecting ? 'Connecting...' : account || 'Connect your Celo Mainnet wallet'}
+                  {walletLabel}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -174,6 +178,22 @@ export const WithdrawPage = () => {
             </div>
 
             {minimumAmountError && <p className="text-sm text-red-600">{minimumAmountError}</p>}
+
+            {connectionStatus === 'connecting' ? <p className="text-sm text-slate-500">{connectionHint}</p> : null}
+
+            {connectionStatus === 'failed' ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                <span>{connectionError}</span>
+                <Button type="button" size="sm" onClick={() => void retryConnection()}>
+                  Retry connection
+                </Button>
+                {canOpenWalletManually ? (
+                  <Button type="button" size="sm" variant="outline" onClick={() => void openWalletManually()}>
+                    Open wallet manually
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               <p className="font-medium text-slate-900">Transfer summary</p>

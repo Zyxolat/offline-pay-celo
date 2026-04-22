@@ -66,7 +66,9 @@ export const getWalletConnectionErrorMessage = (error: unknown) => {
 
 export const wagmiConfig = wagmiAdapter.wagmiConfig;
 
-export const waitForWalletConnection = (timeoutMs = 120000) =>
+export const openWalletConnectionModal = () => appKit.open({ view: "Connect" });
+
+export const waitForWalletConnection = (timeoutMs = 15000) =>
   new Promise<string>((resolve, reject) => {
     const currentAccount = getAccount(wagmiConfig);
 
@@ -92,6 +94,6 @@ export const waitForWalletConnection = (timeoutMs = 120000) =>
   });
 
 export const requestWalletConnection = async (timeoutMs?: number) => {
-  await appKit.open();
+  await openWalletConnectionModal();
   return waitForWalletConnection(timeoutMs);
 };

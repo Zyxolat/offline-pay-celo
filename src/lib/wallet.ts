@@ -14,6 +14,15 @@ type InjectedEthereumProvider = {
   providers?: InjectedEthereumProvider[];
 };
 
+export interface MobileWalletEnvironment {
+  isMobile: boolean;
+  isAndroid: boolean;
+  isChromeAndroid: boolean;
+  isOpera: boolean;
+  isMiniPay: boolean;
+  preferWalletConnectModalOnly: boolean;
+}
+
 const getInjectedProviders = (): InjectedEthereumProvider[] => {
   if (typeof window === 'undefined' || !window.ethereum) {
     return [];
@@ -28,6 +37,58 @@ const getInjectedProviders = (): InjectedEthereumProvider[] => {
 export const isInjectedAvailable = () => getInjectedProviders().length > 0;
 
 export const isMiniPay = () => getInjectedProviders().some((provider) => provider.isMiniPay === true);
+
+export const getMobileWalletEnvironment = (): MobileWalletEnvironment => {
+  if (typeof navigator === 'undefined') {
+    return {
+      isMobile: false,
+      isAndroid: false,
+      isChromeAndroid: false,
+      isOpera: false,
+      isMiniPay: false,
+      preferWalletConnectModalOnly: false,
+    };
+  }
+
+  const userAgent = navigator.userAgent;
+  const android = /Android/i.test(userAgent);
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+  const opera = /OPR\/|Opera/i.test(userAgent);
+  const miniPay = isMiniPay() || /MiniPay/i.test(userAgent);
+  const chromeAndroid = android && /Chrome\//i.test(userAgent) && !opera;
+
+  return {
+    isMobile: mobile,
+    isAndroid: android,
+    isChromeAndroid: chromeAndroid,
+    isOpera: opera,
+    isMiniPay: miniPay,
+    preferWalletConnectModalOnly: miniPay,
+  };
+};
+
+const withEncodedUrl = (template: string, url: string) =>
+  template
+    .replaceAll('{{url}}', encodeURIComponent(url))
+    .replaceAll('{url}', encodeURIComponent(url))
+    .replaceAll('%7B%7Burl%7D%7D', encodeURIComponent(url))
+    .replaceAll('%7Burl%7D', encodeURIComponent(url));
+
+export const resolveManualWalletOpenUrl = (
+  deepLink: string | undefined,
+  currentUrl: string,
+  browser = getMobileWalletEnvironment(),
+) => {
+  if (!deepLink || browser.preferWalletConnectModalOnly) {
+    return null;
+  }
+
+  if (deepLink.includes('{url}') || deepLink.includes('{{url}}') || deepLink.includes('%7Burl%7D')) {
+    return withEncodedUrl(deepLink, currentUrl);
+  }
+
+  return deepLink;
+};
 
 export const getLastWalletType = () => {
   if (typeof window === 'undefined') {
