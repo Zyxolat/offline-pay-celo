@@ -7,6 +7,14 @@ function isAbsoluteHttpUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
+function isRootRelativeUrl(value: string) {
+  return value.startsWith('/');
+}
+
+function isPlaceholderValue(value: string) {
+  return /^(your_|replace_|example|changeme)/i.test(value);
+}
+
 function normalizeApiBaseUrl(value: string) {
   const normalized = value.replace(/\/+$/, '');
   return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
@@ -32,8 +40,8 @@ export function getApiBaseUrl() {
   const configured = getViteEnv('VITE_API_URL');
 
   if (configured) {
-    if (!isAbsoluteHttpUrl(configured)) {
-      throw new Error('VITE_API_URL must be an absolute http(s) URL.');
+    if (!isAbsoluteHttpUrl(configured) && !isRootRelativeUrl(configured)) {
+      throw new Error('VITE_API_URL must be an absolute http(s) URL or a root-relative path such as /api.');
     }
 
     return normalizeApiBaseUrl(configured);
@@ -49,10 +57,23 @@ export function getApiBaseUrl() {
 export function getWalletConnectProjectId() {
   const projectId = getViteEnv('VITE_WALLETCONNECT_PROJECT_ID');
 
-  if (projectId) {
+  if (projectId && !isPlaceholderValue(projectId)) {
     return projectId;
   }
 
-  console.warn('[env] WalletConnect is disabled until VITE_WALLETCONNECT_PROJECT_ID is set.');
-  return null;
+  throw new Error('VITE_WALLETCONNECT_PROJECT_ID is required and must contain a real Reown project id.');
+}
+
+export function getTimeLockContractAddress() {
+  const configured = getViteEnv('VITE_TIMELOCK_CONTRACT_ADDRESS');
+
+  if (!configured) {
+    return null;
+  }
+
+  if (!/^0x[a-fA-F0-9]{40}$/.test(configured)) {
+    throw new Error('VITE_TIMELOCK_CONTRACT_ADDRESS must be a valid 0x-prefixed address.');
+  }
+
+  return configured;
 }

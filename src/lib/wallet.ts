@@ -37,7 +37,7 @@ export const getLastWalletType = () => {
   return window.localStorage.getItem(WALLET_TYPE_STORAGE_KEY);
 };
 
-export const setLastWalletType = (walletType: 'injected' | 'walletconnect') => {
+export const setLastWalletType = (walletType: 'injected' | 'appkit') => {
   if (typeof window === 'undefined') {
     return;
   }

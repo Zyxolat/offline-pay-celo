@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 
-import { config as wagmiConfig } from "@/lib/wagmi";
+import { queryClient, wagmiAdapter } from "@/lib/reown";
 import { CeloProvider } from "@/providers/CeloProvider";
 
 export const WalletProviders = ({ children }: { children: ReactNode }) => (
-  <WagmiProvider config={wagmiConfig}>
-    <CeloProvider>{children}</CeloProvider>
+  <WagmiProvider config={wagmiAdapter.wagmiConfig}>
+    <QueryClientProvider client={queryClient}>
+      <CeloProvider>{children}</CeloProvider>
+    </QueryClientProvider>
   </WagmiProvider>
 );
 

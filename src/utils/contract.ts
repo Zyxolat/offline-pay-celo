@@ -8,13 +8,7 @@ import {
   isAddress,
   parseEther,
 } from "ethers";
-import {
-  connect as wagmiConnect,
-  getAccount,
-  switchChain,
-  watchChainId,
-  watchConnections,
-} from "wagmi/actions";
+import { getAccount, switchChain, watchChainId, watchConnections } from "wagmi/actions";
 import type { EIP1193Provider } from "viem";
 
 import {
@@ -25,11 +19,7 @@ import {
   type OfflinePayWalletState,
 } from "@/config/celo";
 import { TIMELOCK_ABI, TIMELOCK_CONTRACT_ADDRESS } from "@/contracts/TimeLock";
-import {
-  config as wagmiConfig,
-  getPreferredConnector,
-} from "@/lib/wagmi";
-import { isInjectedAvailable, setLastWalletType } from "@/lib/wallet";
+import { requestWalletConnection, wagmiConfig } from "@/lib/reown";
 
 const contractInterface = new Interface(TIMELOCK_ABI);
 const readProvider = new JsonRpcProvider(CELO_MAINNET_RPC_URL);
@@ -157,6 +147,18 @@ const getEthereumProvider = async (): Promise<EIP1193Provider> => {
   return await connector.getProvider({ chainId: CELO_MAINNET_CHAIN_ID }) as EIP1193Provider;
 };
 
+const buildWalletState = (): OfflinePayWalletState => {
+  const account = getAccount(wagmiConfig);
+
+  return {
+    address: account.address ? getAddress(account.address) : "",
+    chainId: account.chainId ?? null,
+    isConnected: account.isConnected,
+    isWrongNetwork: account.chainId !== undefined && account.chainId !== CELO_MAINNET_CHAIN_ID,
+    walletAvailable: typeof window !== "undefined",
+  };
+};
+
 const saveWalletState = (state: OfflinePayWalletState) => {
   if (typeof window === "undefined") {
     return;
@@ -183,14 +185,6 @@ const getCachedWalletState = (): OfflinePayWalletState | null => {
 };
 
 export const readWalletState = async (force = false): Promise<OfflinePayWalletState> => {
-  const cached = getCachedWalletState();
-
-  if (cached && !force) {
-    return cached;
-  }
-
-  const account = getAccount(wagmiConfig);
-
   if (typeof window === "undefined") {
     const emptyState = {
       address: "",
@@ -204,13 +198,20 @@ export const readWalletState = async (force = false): Promise<OfflinePayWalletSt
     return emptyState;
   }
 
-  const state = {
-    address: account.address ? getAddress(account.address) : "",
-    chainId: account.chainId ?? null,
-    isConnected: account.isConnected,
-    isWrongNetwork: account.chainId !== undefined && account.chainId !== CELO_MAINNET_CHAIN_ID,
-    walletAvailable: true,
-  };
+  const cached = getCachedWalletState();
+  const state = buildWalletState();
+
+  if (!force && cached) {
+    const cacheMatchesLiveAccount =
+      cached.address === state.address &&
+      cached.chainId === state.chainId &&
+      cached.isConnected === state.isConnected &&
+      cached.isWrongNetwork === state.isWrongNetwork;
+
+    if (cacheMatchesLiveAccount) {
+      return cached;
+    }
+  }
 
   saveWalletState(state);
   return state;
@@ -246,18 +247,7 @@ export const connectWallet = async () => {
   const account = getAccount(wagmiConfig);
 
   if (!account.isConnected) {
-    const connector = await getPreferredConnector();
-
-    if (!connector) {
-      throw new Error("No wallet connector is available.");
-    }
-
-    await wagmiConnect(wagmiConfig, {
-      connector,
-      chainId: CELO_MAINNET_CHAIN_ID,
-    });
-
-    setLastWalletType(isInjectedAvailable() ? "injected" : "walletconnect");
+    await requestWalletConnection();
   }
 
   const provider = await ensureCeloMainnet();
@@ -275,11 +265,11 @@ export const connectWallet = async () => {
   };
 
   saveWalletState({
+    ...buildWalletState(),
     address: result.address,
     chainId: result.chainId,
     isConnected: true,
     isWrongNetwork: result.chainId !== CELO_MAINNET_CHAIN_ID,
-    walletAvailable: true,
   });
 
   return result;

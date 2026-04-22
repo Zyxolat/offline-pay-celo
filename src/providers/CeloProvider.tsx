@@ -2,17 +2,15 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   type ReactNode,
 } from "react";
-import { useAccount, useConnect, useSwitchChain } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 
 import WrongNetworkModal from "@/components/web3/WrongNetworkModal";
 import { CELO_MAINNET_CHAIN_ID, type OfflinePayWalletState } from "@/config/celo";
-import { getLastWalletType, isInjectedAvailable, setLastWalletType } from "@/lib/wallet";
-import { getInjectedConnector, getPreferredConnector, getWalletConnectionErrorMessage } from "@/lib/wagmi";
+import { getWalletConnectionErrorMessage, requestWalletConnection } from "@/lib/reown";
+import { readWalletState } from "@/utils/contract";
 
 interface CeloContextValue extends OfflinePayWalletState {
   connecting: boolean;
@@ -23,21 +21,11 @@ interface CeloContextValue extends OfflinePayWalletState {
   switchNetwork: () => Promise<void>;
 }
 
-const defaultWalletState: OfflinePayWalletState = {
-  address: "",
-  chainId: null,
-  isConnected: false,
-  isWrongNetwork: false,
-  walletAvailable: false,
-};
-
 const CeloContext = createContext<CeloContextValue | null>(null);
 
 export const CeloProvider = ({ children }: { children: ReactNode }) => {
   const { address, chainId, isConnected, isConnecting } = useAccount();
-  const { connectAsync, connectors, error: connectError } = useConnect();
   const { switchChainAsync, isPending: switchingNetwork, error: switchChainError } = useSwitchChain();
-  const hasAttemptedReconnectRef = useRef(false);
 
   const walletState = useMemo<OfflinePayWalletState>(
     () => ({
@@ -45,59 +33,28 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
       chainId: chainId ?? null,
       isConnected,
       isWrongNetwork: Boolean(isConnected && chainId && chainId !== CELO_MAINNET_CHAIN_ID),
-      walletAvailable: connectors.length > 0 || !isInjectedAvailable() || typeof window !== "undefined",
+      walletAvailable: typeof window !== "undefined",
     }),
-    [address, chainId, connectors.length, isConnected],
+    [address, chainId, isConnected],
   );
 
   const switchError = switchChainError?.message || "";
 
-  const refreshWallet = useCallback(async (_force = false) => {
-    return;
+  const refreshWallet = useCallback(async (force = false) => {
+    await readWalletState(force);
   }, []);
 
   const handleConnect = useCallback(async () => {
     try {
-      const preferredConnector = await getPreferredConnector();
-      if (!preferredConnector) {
-        throw new Error("No wallet connector is available.");
+      if (isConnected && address) {
+        return address;
       }
 
-      const result = await connectAsync({
-        connector: preferredConnector,
-        chainId: CELO_MAINNET_CHAIN_ID,
-      });
-      setLastWalletType(preferredConnector.id === "walletConnect" ? "walletconnect" : "injected");
-
-      return result.accounts[0];
+      return await requestWalletConnection();
     } catch (error) {
       throw new Error(getWalletConnectionErrorMessage(error));
     }
-  }, [connectAsync]);
-
-  useEffect(() => {
-    if (hasAttemptedReconnectRef.current || isConnected || isConnecting) {
-      return;
-    }
-
-    hasAttemptedReconnectRef.current = true;
-
-    if (getLastWalletType() !== "injected" || !isInjectedAvailable()) {
-      return;
-    }
-
-    const injectedConnector = getInjectedConnector() ?? connectors[0];
-    if (!injectedConnector) {
-      return;
-    }
-
-    void connectAsync({
-      connector: injectedConnector,
-      chainId: CELO_MAINNET_CHAIN_ID,
-    }).catch((error) => {
-      console.error("Injected wallet reconnect failed:", error);
-    });
-  }, [connectAsync, connectors, isConnected, isConnecting]);
+  }, [address, isConnected]);
 
   const handleSwitchNetwork = useCallback(async () => {
     try {
@@ -130,7 +87,7 @@ export const CeloProvider = ({ children }: { children: ReactNode }) => {
       <WrongNetworkModal
         open={walletState.isConnected && walletState.walletAvailable && walletState.isWrongNetwork}
         onSwitchNetwork={handleSwitchNetwork}
-        switchError={switchError || (connectError ? getWalletConnectionErrorMessage(connectError) : "")}
+        switchError={switchError}
         switching={switchingNetwork}
       />
     </CeloContext.Provider>

@@ -33,13 +33,12 @@ export default defineConfig(({ mode }) => ({
 
           if (
             id.includes("/@walletconnect/") ||
-            id.includes("/@reown/")
+            id.includes("/@reown/") ||
+            id.includes("/wagmi/") ||
+            id.includes("/@wagmi/") ||
+            id.includes("/viem/")
           ) {
-            return "walletconnect";
-          }
-
-          if (id.includes("/wagmi/") || id.includes("/viem/")) {
-            return "wagmi";
+            return "web3";
           }
 
           if (id.includes("/ethers/")) {

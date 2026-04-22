@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -24,10 +23,6 @@ import { AdminDashboard } from "./pages/AdminDashboard.tsx";
 import LearnMorePage from "./pages/LearnMore.tsx";
 import WithdrawPage from "./pages/Withdraw.tsx";
 import WalletProviders from "./providers/WalletProviders";
-
-const queryClient = new QueryClient();
-
-const WalletRouteBoundary = ({ children }: { children: React.ReactNode }) => <WalletProviders>{children}</WalletProviders>;
 
 const SafeRoute = ({
   children,
@@ -70,19 +65,19 @@ const AppRoutes = () => {
       <Route path="/auth/*" element={renderSafeRoute("Auth", <AuthPages />)} />
       <Route
         path="/dashboard"
-        element={renderSafeRoute("Dashboard", <ProtectedRoute><WalletRouteBoundary><Dashboard /></WalletRouteBoundary></ProtectedRoute>)}
+        element={renderSafeRoute("Dashboard", <ProtectedRoute><Dashboard /></ProtectedRoute>)}
       />
       <Route
         path="/send"
-        element={renderSafeRoute("Send", <ProtectedRoute><WalletRouteBoundary><SendPage /></WalletRouteBoundary></ProtectedRoute>)}
+        element={renderSafeRoute("Send", <ProtectedRoute><SendPage /></ProtectedRoute>)}
       />
       <Route
         path="/receive"
-        element={renderSafeRoute("Receive", <ProtectedRoute><WalletRouteBoundary><ReceivePage /></WalletRouteBoundary></ProtectedRoute>)}
+        element={renderSafeRoute("Receive", <ProtectedRoute><ReceivePage /></ProtectedRoute>)}
       />
       <Route
         path="/withdraw"
-        element={renderSafeRoute("Withdraw", <ProtectedRoute><WalletRouteBoundary><WithdrawPage /></WalletRouteBoundary></ProtectedRoute>)}
+        element={renderSafeRoute("Withdraw", <ProtectedRoute><WithdrawPage /></ProtectedRoute>)}
       />
       <Route
         path="/scan"
@@ -150,7 +145,7 @@ const AppContent = () => {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <WalletProviders>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -158,7 +153,7 @@ const AppContent = () => {
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
-    </QueryClientProvider>
+    </WalletProviders>
   );
 };
 

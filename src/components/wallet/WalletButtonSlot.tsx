@@ -1,10 +1,4 @@
 import WalletButton from "@/components/WalletButton";
-import WalletProviders from "@/providers/WalletProviders";
-
-const WalletButtonSlot = () => (
-  <WalletProviders>
-    <WalletButton />
-  </WalletProviders>
-);
+const WalletButtonSlot = () => <WalletButton />;
 
 export default WalletButtonSlot;

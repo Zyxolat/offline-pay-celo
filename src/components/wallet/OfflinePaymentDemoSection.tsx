@@ -1,10 +1,4 @@
 import OfflinePaymentDemo from "@/components/landing/OfflinePaymentDemo";
-import WalletProviders from "@/providers/WalletProviders";
-
-const OfflinePaymentDemoSection = () => (
-  <WalletProviders>
-    <OfflinePaymentDemo />
-  </WalletProviders>
-);
+const OfflinePaymentDemoSection = () => <OfflinePaymentDemo />;
 
 export default OfflinePaymentDemoSection;
