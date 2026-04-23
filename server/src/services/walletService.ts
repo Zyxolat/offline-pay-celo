@@ -4,6 +4,8 @@ import { UserModel } from '../models/User.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { normalizeError } from '../utils/logger.js';
 import { celoService } from './celoService.js';
+import { contractIndexerService } from './contractIndexerService.js';
+import { transactionService } from './transactionService.js';
 
 const WITHDRAW_MINIMUMS = {
   CELO: new Decimal('0.001'),
@@ -41,6 +43,8 @@ export const walletService = {
     limit: number = 50,
     offset: number = 0
   ): Promise<{ transactions: any[]; total: number }> {
+    await transactionService.reconcileTrackedTransactions();
+
     const transactions = await TransactionModel.findByUser(userId, limit, offset);
     const total = await TransactionModel.countByUser(userId);
 
@@ -58,6 +62,31 @@ export const walletService = {
         confirmations: tx.confirmations,
       })),
       total,
+    };
+  },
+
+  async syncTransaction(
+    userId: string,
+    payload: {
+      txHash: string;
+      recipient?: string;
+      amount?: string;
+      currency?: string;
+      status?: 'submitted' | 'pending' | 'confirmed' | 'failed';
+      confirmations?: number;
+      note?: string;
+    }
+  ) {
+    const result = await contractIndexerService.verifyAndRecordTransaction(payload.txHash, userId);
+
+    return {
+      txHash: result.verified.txHash,
+      status: result.verified.status,
+      recipient: result.verified.recipient,
+      amount: result.verified.amount,
+      currency: 'CELO',
+      confirmations: result.verified.confirmations,
+      note: result.verified.note,
     };
   },
 

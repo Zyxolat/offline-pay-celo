@@ -30,6 +30,16 @@ export const walletAPI = {
   getTransactions: (limit = 50, offset = 0) =>
     withApiErrorLogging('getTransactions', api.get('/wallet/transactions', { params: { limit, offset } })),
 
+  syncTransaction: (payload: {
+    txHash: string;
+    recipient?: string;
+    amount?: string;
+    currency?: string;
+    status?: 'submitted' | 'pending' | 'confirmed' | 'failed';
+    confirmations?: number;
+    note?: string;
+  }) => withApiErrorLogging('syncTransaction', api.post('/wallet/transactions/sync', payload)),
+
   withdraw: (destinationAddress: string, token: 'CELO' | 'cUSD', amount: string) =>
     withApiErrorLogging('withdraw', api.post('/wallet/withdraw', { destinationAddress, token, amount })),
 };

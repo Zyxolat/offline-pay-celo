@@ -24,24 +24,56 @@ import LearnMorePage from "./pages/LearnMore.tsx";
 import WithdrawPage from "./pages/Withdraw.tsx";
 import WalletProviders from "./providers/WalletProviders";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
+import { resumeWalletConnectionFromUri } from "@/lib/reown";
 
 const WalletCallbackRoute = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const walletConnectUri = searchParams.get("uri");
+
     logWalletConnection("wallet.callback.route.entered", {
       path: location.pathname,
       search: location.search,
+      walletConnectUri,
       href: typeof window !== "undefined" ? window.location.href : null,
     });
 
+    let cancelled = false;
+
+    const resumeConnection = async () => {
+      if (!walletConnectUri) {
+        logWalletConnection("wallet.callback.route.missing-uri");
+        return;
+      }
+
+      try {
+        await resumeWalletConnectionFromUri(walletConnectUri);
+        logWalletConnection("wallet.callback.route.resume.completed");
+      } catch (error) {
+        logWalletConnection("wallet.callback.route.resume.failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
+    void resumeConnection();
+
     const timeout = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
       logWalletConnection("wallet.callback.route.redirecting-home");
       navigate("/", { replace: true });
-    }, 1500);
+    }, walletConnectUri ? 2200 : 1000);
 
-    return () => window.clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [location.pathname, location.search, navigate]);
 
   return (

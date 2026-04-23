@@ -6,6 +6,7 @@ import {
   getPaymentsForAddress,
   getWalletBalance,
   refundPayment,
+  subscribeToPaymentEvents,
   subscribeToWalletEvents,
   type TimeLockPaymentView,
 } from "@/utils/contract";
@@ -127,11 +128,26 @@ export const useTimeLockPayments = () => {
     return unsubscribe;
   }, [refresh]);
 
+  useEffect(() => {
+    if (!address || isWrongNetwork) {
+      return () => undefined;
+    }
+
+    const unsubscribe = subscribeToPaymentEvents(address, () => {
+      void refresh(address, { silent: true });
+    });
+
+    return unsubscribe;
+  }, [address, isWrongNetwork, refresh]);
+
   const handleConnectWallet = useCallback(async () => {
     try {
       const nextAddress = await connect();
       setError("");
       await refresh(nextAddress);
+      window.setTimeout(() => {
+        void refresh(nextAddress, { silent: true });
+      }, 2000);
       return nextAddress;
     } catch (connectError) {
       const message = connectError instanceof Error ? connectError.message : "Unable to connect your wallet.";
@@ -149,6 +165,9 @@ export const useTimeLockPayments = () => {
         setLastTransactionHash(result.hash);
         setError("");
         await refresh();
+        window.setTimeout(() => {
+          void refresh(undefined, { silent: true });
+        }, 2000);
         return result;
       } catch (acceptError) {
         const message = acceptError instanceof Error ? acceptError.message : "Unable to claim this payment.";
@@ -171,6 +190,9 @@ export const useTimeLockPayments = () => {
         setLastTransactionHash(result.hash);
         setError("");
         await refresh();
+        window.setTimeout(() => {
+          void refresh(undefined, { silent: true });
+        }, 2000);
         return result;
       } catch (refundError) {
         const message = refundError instanceof Error ? refundError.message : "Unable to refund this payment.";

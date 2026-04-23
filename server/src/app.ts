@@ -17,6 +17,7 @@ import paymentRoutes from './routes/payments.js';
 import queueRoutes from './routes/queue.js';
 import transactionRoutes from './routes/transactions.js';
 import adminRoutes from './routes/admin.js';
+import { contractIndexerService } from './services/contractIndexerService.js';
 
 const app = express();
 const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
@@ -67,6 +68,21 @@ app.get('/status', (_req: Request, res: Response) => {
       lastError: database.lastError,
     },
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/indexer/status', async (_req: Request, res: Response) => {
+  const database = getDatabaseStatus();
+  const indexer = await contractIndexerService.getStatus();
+
+  res.status(indexer.status === 'ok' ? 200 : 503).json({
+    indexer,
+    db: {
+      phase: database.phase,
+      isReady: database.isReady,
+      lastConnectedAt: database.lastConnectedAt,
+      lastError: database.lastError,
+    },
   });
 });
 
@@ -225,6 +241,10 @@ const serverBootstrapState = globalThis as typeof globalThis & {
   __server_started__?: boolean;
 };
 
+function isMissingRelationError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '42P01';
+}
+
 function registerGlobalErrorHandlers() {
   if (hasRegisteredGlobalErrorHandlers) {
     return;
@@ -266,7 +286,16 @@ export function startServer() {
     void (async () => {
       try {
         await connectDatabaseWithRetry();
+        await contractIndexerService.start();
       } catch (error) {
+        if (isMissingRelationError(error)) {
+          log('ERROR', 'Database not initialized. Run npm run migrate', {
+            ...normalizeError(error),
+            action: 'npm run migrate',
+          });
+          return;
+        }
+
         log('ERROR', 'DB connection failed', normalizeError(error));
       }
     })();
@@ -314,6 +343,7 @@ async function shutdown(signal: 'SIGTERM' | 'SIGINT') {
     }
 
     await closeDatabasePool();
+    await contractIndexerService.stop();
     log('INFO', 'Shutdown completed successfully');
     process.exit(0);
   } catch (error) {

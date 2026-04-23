@@ -63,6 +63,65 @@ const migrationStatements = [
     CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
   `,
   `
+    CREATE TABLE IF NOT EXISTS chain_indexer_state (
+      key VARCHAR(100) PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS chain_indexer_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      event_name VARCHAR(100) NOT NULL,
+      contract_address VARCHAR(255),
+      abi_version VARCHAR(32) NOT NULL DEFAULT 'v1',
+      tx_hash VARCHAR(255) NOT NULL,
+      log_index INT NOT NULL,
+      block_number BIGINT NOT NULL,
+      block_hash VARCHAR(255),
+      processed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(tx_hash, log_index)
+    );
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS event_name VARCHAR(100);
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS contract_address VARCHAR(255);
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS abi_version VARCHAR(32) NOT NULL DEFAULT 'v1';
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS tx_hash VARCHAR(255);
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS log_index INT;
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS block_number BIGINT;
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS block_hash VARCHAR(255);
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP NOT NULL DEFAULT NOW();
+    ALTER TABLE chain_indexer_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chain_indexer_events_tx_hash_log_index
+      ON chain_indexer_events (tx_hash, log_index);
+    CREATE INDEX IF NOT EXISTS idx_chain_indexer_events_block_number
+      ON chain_indexer_events (block_number);
+    CREATE INDEX IF NOT EXISTS idx_chain_indexer_events_contract_block
+      ON chain_indexer_events (contract_address, block_number);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS transaction_history (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      tx_hash VARCHAR(255),
+      previous_status VARCHAR(50),
+      next_status VARCHAR(50) NOT NULL,
+      reason VARCHAR(100) NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS tx_hash VARCHAR(255);
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS next_status VARCHAR(50);
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS reason VARCHAR(100);
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE transaction_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
+    CREATE INDEX IF NOT EXISTS idx_transaction_history_transaction_id
+      ON transaction_history (transaction_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_transaction_history_tx_hash
+      ON transaction_history (tx_hash);
+  `,
+  `
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -115,8 +174,6 @@ const migrationStatements = [
     );
     CREATE INDEX IF NOT EXISTS idx_credentials_user_id ON credentials(user_id);
   `,
-  `DROP TABLE IF EXISTS otp_codes;`,
-  `DROP TABLE IF EXISTS password_hashes;`,
 ];
 
 async function backfillWallets() {

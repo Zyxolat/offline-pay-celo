@@ -53,7 +53,13 @@ export const useAdminData = (
     }
 
     void loadData();
-  }, [enabled, endpoint]);
+
+    const intervalId = window.setInterval(() => {
+      void loadData(pagination?.page || 1, pagination?.limit || 50);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [enabled, endpoint, pagination?.limit, pagination?.page]);
 
   return { data, pagination, loading, error, loadData };
 };

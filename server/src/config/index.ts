@@ -22,6 +22,11 @@ type DatabaseConfig = {
   };
 };
 
+type IndexedContractConfig = {
+  address: string;
+  abiVersion: string;
+};
+
 const configWarnings: string[] = [];
 const configErrors: string[] = [];
 
@@ -39,6 +44,23 @@ function failConfig(message: string, meta?: Record<string, unknown>): never {
 function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function deriveWebSocketUrl(value: string): string | undefined {
+  if (value.startsWith('https://')) {
+    return `wss://${value.slice('https://'.length)}`;
+  }
+
+  if (value.startsWith('http://')) {
+    return `ws://${value.slice('http://'.length)}`;
+  }
+
+  return undefined;
 }
 
 function isProduction(): boolean {
@@ -63,6 +85,28 @@ function requireEnv(name: string, options: { allowInDevFallback?: string } = {})
 
 function getOptionalEnv(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
+}
+
+function parseIndexedContracts(fallbackAddress: string): IndexedContractConfig[] {
+  const rawContracts = getOptionalEnv('CELO_TIMELOCK_CONTRACTS');
+
+  if (!rawContracts) {
+    return [{ address: fallbackAddress, abiVersion: 'v1' }];
+  }
+
+  const contracts = rawContracts
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [address, abiVersion = 'v1'] = entry.split('@').map((part) => part.trim());
+      return {
+        address,
+        abiVersion: abiVersion || 'v1',
+      };
+    });
+
+  return contracts.length > 0 ? contracts : [{ address: fallbackAddress, abiVersion: 'v1' }];
 }
 
 function normalizeOrigin(value: string): string {
@@ -285,9 +329,35 @@ export const config = {
   celo: {
     network: process.env.CELO_NETWORK || 'mainnet',
     rpcUrl: process.env.CELO_RPC_URL || 'https://forno.celo.org',
+    wsRpcUrl:
+      getOptionalEnv('CELO_WS_RPC_URL') ||
+      deriveWebSocketUrl(process.env.CELO_RPC_URL || 'https://forno.celo.org'),
     chainId: parseInt(process.env.CELO_CHAIN_ID || '42220', 10),
     cUSDAddress: process.env.CELO_CUSD_ADDRESS || '0x765DE816845861e75A25fCA122bb6bAA3c1E852a',
     withdrawPrivateKey: process.env.CELO_WITHDRAW_PRIVATE_KEY || '',
+    timeLockContractAddress:
+      process.env.CELO_TIMELOCK_CONTRACT_ADDRESS ||
+      process.env.VITE_TIMELOCK_CONTRACT_ADDRESS ||
+      '0x72D90d16A798095b6fC29eCf71867A87729acC31',
+    timeLockContracts: parseIndexedContracts(
+      process.env.CELO_TIMELOCK_CONTRACT_ADDRESS ||
+      process.env.VITE_TIMELOCK_CONTRACT_ADDRESS ||
+      '0x72D90d16A798095b6fC29eCf71867A87729acC31'
+    ),
+    eventIndexerStartBlock: parsePositiveInt(process.env.CELO_EVENT_INDEXER_START_BLOCK, 0),
+    eventIndexerConfirmations: parsePositiveInt(process.env.CELO_EVENT_INDEXER_CONFIRMATIONS, 3),
+    eventIndexerSafetyMargin: parsePositiveInt(process.env.CELO_EVENT_INDEXER_SAFETY_MARGIN, 10),
+    eventIndexerPollingIntervalMs: parsePositiveInt(process.env.CELO_EVENT_INDEXER_POLLING_INTERVAL_MS, 15_000),
+    eventIndexerWsReconnectDelayMs: parsePositiveInt(process.env.CELO_EVENT_INDEXER_WS_RECONNECT_DELAY_MS, 5_000),
+    eventIndexerMaxBlocksPerQuery: parsePositiveInt(process.env.CELO_EVENT_INDEXER_MAX_BLOCKS_PER_QUERY, 500),
+    eventIndexerReorgCheckWindow: parsePositiveInt(process.env.CELO_EVENT_INDEXER_REORG_CHECK_WINDOW, 25),
+    eventIndexerAlertLagBlocks: parsePositiveInt(process.env.CELO_EVENT_INDEXER_ALERT_LAG_BLOCKS, 20),
+    eventIndexerAlertSyncStaleMs: parsePositiveInt(process.env.CELO_EVENT_INDEXER_ALERT_SYNC_STALE_MS, 120_000),
+    eventIndexerRecoveryPollingIntervalMs: parsePositiveInt(process.env.CELO_EVENT_INDEXER_RECOVERY_POLLING_INTERVAL_MS, 5_000),
+    eventIndexerFailureThreshold: parsePositiveInt(process.env.CELO_EVENT_INDEXER_FAILURE_THRESHOLD, 3),
+    eventIndexerIntegrityIntervalMs: parsePositiveInt(process.env.CELO_EVENT_INDEXER_INTEGRITY_INTERVAL_MS, 300_000),
+    eventIndexerIntegritySampleSize: parsePositiveInt(process.env.CELO_EVENT_INDEXER_INTEGRITY_SAMPLE_SIZE, 5),
+    eventIndexerIntegrityLookbackBlocks: parsePositiveInt(process.env.CELO_EVENT_INDEXER_INTEGRITY_LOOKBACK_BLOCKS, 250),
   },
 
   frontend: {

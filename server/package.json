@@ -11,7 +11,7 @@
     "dev": "node --loader ts-node/esm src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
-    "migrate": "node dist/migrations/run.js"
+    "migrate": "node dist/scripts/init-db.js"
   },
   "keywords": [
     "celo",

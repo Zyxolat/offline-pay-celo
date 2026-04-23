@@ -39,6 +39,12 @@ export const useAdminStats = (enabled = true) => {
     }
 
     void loadStats();
+
+    const intervalId = window.setInterval(() => {
+      void loadStats();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
   }, [enabled]);
 
   return { stats, loading, error, refresh: loadStats };

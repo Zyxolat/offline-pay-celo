@@ -19,6 +19,7 @@ import {
   type OfflinePayWalletState,
 } from "@/config/celo";
 import { TIMELOCK_ABI, TIMELOCK_CONTRACT_ADDRESS } from "@/contracts/TimeLock";
+import { syncTrackedTransaction } from "@/lib/transactionSync";
 import { requestWalletConnection, wagmiConfig } from "@/lib/reown";
 
 const contractInterface = new Interface(TIMELOCK_ABI);
@@ -146,7 +147,7 @@ const getFriendlyErrorMessage = (error: unknown) => {
     return "This payment is already unlocked, so the sender can no longer cancel it.";
   }
 
-  if (message.includes("only recipient can accept")) {
+  if (message.includes("only recipient can accept") || message.includes("only recipient can claim")) {
     return "Only the intended recipient can accept this payment.";
   }
 
@@ -291,6 +292,8 @@ export const connectWallet = async () => {
     chainId: Number(network.chainId),
   };
 
+  console.log("Chain ID:", result.chainId);
+
   saveWalletState({
     ...buildWalletState(),
     address: result.address,
@@ -314,6 +317,26 @@ const getContract = (runner: BrowserProvider | JsonRpcProvider | Awaited<ReturnT
   return new Contract(TIMELOCK_CONTRACT_ADDRESS, TIMELOCK_ABI, runner);
 };
 
+const syncTransactionRecord = async (payload: {
+  txHash: string;
+  recipient: string;
+  amount: string;
+  currency: string;
+  status: "submitted" | "confirmed" | "failed";
+  confirmations?: number;
+  note?: string;
+}) => {
+  await syncTrackedTransaction(payload);
+};
+
+const getClaimMethod = (contract: Contract) =>
+  typeof contract.claimPayment === "function" ? contract.claimPayment.bind(contract) : contract.acceptPayment.bind(contract);
+
+const getClaimGasEstimator = (contract: Contract) =>
+  typeof contract.claimPayment?.estimateGas === "function"
+    ? contract.claimPayment.estimateGas.bind(contract.claimPayment)
+    : contract.acceptPayment.estimateGas.bind(contract.acceptPayment);
+
 const buildGasEstimate = async (gasLimit: bigint, provider: BrowserProvider | JsonRpcProvider): Promise<GasEstimate> => {
   const feeData = await provider.getFeeData();
   const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
@@ -333,14 +356,14 @@ const mapPayment = (
     sender: string;
     recipient: string;
     amount: bigint;
-    deadline: bigint;
+    deadline?: bigint;
     claimed: boolean;
     refunded: boolean;
   },
   viewer: string,
 ): TimeLockPaymentView => {
   const now = getCurrentUnixTime();
-  const releaseTime = Number(payment.deadline);
+  const releaseTime = payment.deadline !== undefined ? Number(payment.deadline) : now;
   const normalizedViewer = viewer ? getAddress(viewer) : "";
   const sender = getAddress(payment.sender);
   const recipient = getAddress(payment.recipient);
@@ -364,7 +387,7 @@ const mapPayment = (
     isRecipient,
     isClaimable,
     canAccept: isRecipient && !payment.claimed && !payment.refunded && isClaimable,
-    canRefund: isSender && !payment.claimed && !payment.refunded && !isClaimable,
+    canRefund: isSender && !payment.claimed && !payment.refunded,
   };
 };
 
@@ -471,14 +494,37 @@ export const createPayment = async (recipient: string, duration: number, amount:
   try {
     const { signer } = await connectWallet();
     const contract = getContract(signer);
-    const tx = await contract.createPayment(getAddress(recipient.trim()), BigInt(Math.floor(duration)), {
-      value: parseEther(amount.trim()),
+    const normalizedRecipient = getAddress(recipient.trim());
+    const normalizedAmount = amount.trim();
+    const tx = await contract.createPayment(normalizedRecipient, BigInt(Math.floor(duration)), {
+      value: parseEther(normalizedAmount),
+    });
+    console.log("TX SENT:", tx.hash);
+    await syncTransactionRecord({
+      txHash: tx.hash,
+      recipient: normalizedRecipient,
+      amount: normalizedAmount,
+      currency: "CELO",
+      status: "submitted",
+      note: "Contract payment created",
     });
     const receipt = await tx.wait();
+    console.log("TX CONFIRMED");
+    console.log("FETCHED TX:", receipt);
+    const paymentId = receipt ? parsePaymentCreatedEvent(receipt.logs) : null;
+    await syncTransactionRecord({
+      txHash: receipt?.hash || tx.hash,
+      recipient: normalizedRecipient,
+      amount: normalizedAmount,
+      currency: "CELO",
+      status: "confirmed",
+      confirmations: receipt?.confirmations ?? 1,
+      note: paymentId === null ? "Contract payment created" : `Contract payment #${paymentId} created`,
+    });
 
     return {
       hash: receipt?.hash || tx.hash,
-      paymentId: receipt ? parsePaymentCreatedEvent(receipt.logs) : null,
+      paymentId,
     };
   } catch (error) {
     throw new Error(getFriendlyErrorMessage(error));
@@ -489,7 +535,7 @@ export const estimatePaymentActionGas = async (paymentId: number, action: "accep
   const { signer, provider } = await connectWallet();
   const contract = getContract(signer);
   const gasLimit = action === "accept"
-    ? await contract.acceptPayment.estimateGas(paymentId)
+    ? await getClaimGasEstimator(contract)(paymentId)
     : await contract.refundPayment.estimateGas(paymentId);
 
   return buildGasEstimate(gasLimit, provider);
@@ -513,8 +559,29 @@ export const acceptPayment = async (paymentId: number): Promise<ContractActionRe
     }
 
     const contract = getContract(signer);
-    const tx = await contract.acceptPayment(paymentId);
+    const claimPayment = getClaimMethod(contract);
+    const tx = await claimPayment(paymentId);
+    console.log("TX SENT:", tx.hash);
+    await syncTransactionRecord({
+      txHash: tx.hash,
+      recipient: latestPayment.recipient,
+      amount: latestPayment.amount,
+      currency: "CELO",
+      status: "submitted",
+      note: `Contract payment #${paymentId} claim submitted`,
+    });
     const receipt = await tx.wait();
+    console.log("TX CONFIRMED");
+    console.log("FETCHED TX:", receipt);
+    await syncTransactionRecord({
+      txHash: receipt?.hash || tx.hash,
+      recipient: latestPayment.recipient,
+      amount: latestPayment.amount,
+      currency: "CELO",
+      status: "confirmed",
+      confirmations: receipt?.confirmations ?? 1,
+      note: `Contract payment #${paymentId} claimed`,
+    });
 
     return {
       hash: receipt?.hash || tx.hash,
@@ -543,7 +610,27 @@ export const refundPayment = async (paymentId: number): Promise<ContractActionRe
 
     const contract = getContract(signer);
     const tx = await contract.refundPayment(paymentId);
+    console.log("TX SENT:", tx.hash);
+    await syncTransactionRecord({
+      txHash: tx.hash,
+      recipient: latestPayment.recipient,
+      amount: latestPayment.amount,
+      currency: "CELO",
+      status: "submitted",
+      note: `Contract payment #${paymentId} refund submitted`,
+    });
     const receipt = await tx.wait();
+    console.log("TX CONFIRMED");
+    console.log("FETCHED TX:", receipt);
+    await syncTransactionRecord({
+      txHash: receipt?.hash || tx.hash,
+      recipient: latestPayment.recipient,
+      amount: latestPayment.amount,
+      currency: "CELO",
+      status: "confirmed",
+      confirmations: receipt?.confirmations ?? 1,
+      note: `Contract payment #${paymentId} refunded`,
+    });
 
     return {
       hash: receipt?.hash || tx.hash,
@@ -568,5 +655,46 @@ export const subscribeToWalletEvents = (listener: () => void) => {
   return () => {
     unwatchConnection();
     unwatchChain();
+  };
+};
+
+export const subscribeToPaymentEvents = (address: string, listener: () => void) => {
+  if (!address || !isAddress(address)) {
+    return () => undefined;
+  }
+
+  const normalizedAddress = getAddress(address);
+  const contract = getContract(getReadProvider());
+  const refreshFromEvent = () => {
+    console.log("FETCHED TX:", { address: normalizedAddress, source: "contract-event" });
+    listener();
+  };
+
+  const handleCreated = (_paymentId: bigint, sender: string, recipient: string) => {
+    if (getAddress(sender) === normalizedAddress || getAddress(recipient) === normalizedAddress) {
+      refreshFromEvent();
+    }
+  };
+
+  const handleClaimed = (_paymentId: bigint, recipient: string) => {
+    if (getAddress(recipient) === normalizedAddress) {
+      refreshFromEvent();
+    }
+  };
+
+  const handleRefunded = (_paymentId: bigint, sender: string) => {
+    if (getAddress(sender) === normalizedAddress) {
+      refreshFromEvent();
+    }
+  };
+
+  contract.on("PaymentCreated", handleCreated);
+  contract.on("PaymentClaimed", handleClaimed);
+  contract.on("PaymentRefunded", handleRefunded);
+
+  return () => {
+    contract.off("PaymentCreated", handleCreated);
+    contract.off("PaymentClaimed", handleClaimed);
+    contract.off("PaymentRefunded", handleRefunded);
   };
 };

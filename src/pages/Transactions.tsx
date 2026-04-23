@@ -17,16 +17,28 @@ export const TransactionsPage = () => {
 
   useEffect(() => {
     void loadTransactions();
+    const intervalId = window.setInterval(() => {
+      void loadTransactions(true);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
-  const loadTransactions = async () => {
+  const loadTransactions = async (silent = false) => {
     try {
+      if (!silent) {
+        setLoading(true);
+      }
       const response = await walletAPI.getTransactions(100, 0);
-      setTransactions(Array.isArray(response.data?.data?.transactions) ? response.data.data.transactions : []);
+      const nextTransactions = Array.isArray(response.data?.data?.transactions) ? response.data.data.transactions : [];
+      console.log("FETCHED TX:", nextTransactions);
+      setTransactions(nextTransactions);
     } catch (error) {
       console.error("Error loading transactions:", error);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -36,7 +48,7 @@ export const TransactionsPage = () => {
     }
 
     if (filter === "pending") {
-      return transaction?.status === "pending" || transaction?.status === "pending_sync";
+      return transaction?.status === "pending" || transaction?.status === "pending_sync" || transaction?.status === "submitted";
     }
 
     return transaction?.status === filter;

@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
 import { celo } from "@reown/appkit/networks";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { ConnectionController } from "@reown/appkit-controllers";
 import { getAddress } from "viem";
 import { getAccount, watchAccount } from "wagmi/actions";
 
@@ -9,20 +10,14 @@ import { getWalletConnectProjectId } from "@/config/env";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 const projectId = getWalletConnectProjectId();
-
-const resolveWalletMetadataUrl = () => {
-  if (typeof window !== "undefined" && window.location.origin) {
-    return window.location.origin;
-  }
-
-  return "https://offline-pay-celo.vercel.app";
-};
+const WALLETCONNECT_APP_URL = "https://offline-pay-celo-production.up.railway.app";
+const WALLETCONNECT_APP_ICON = `${WALLETCONNECT_APP_URL}/logo.png`;
 
 export const walletMetadata = {
   name: "OfflinePay",
-  description: "Offline payments on Celo",
-  url: resolveWalletMetadataUrl(),
-  icons: ["https://offline-pay-celo.vercel.app/favicon.ico"],
+  description: "Offline crypto payments",
+  url: WALLETCONNECT_APP_URL,
+  icons: [WALLETCONNECT_APP_ICON],
 } as const;
 
 export const supportedNetworks = [celo] as const;
@@ -61,6 +56,27 @@ const reownSingleton =
       currentOrigin: typeof window !== "undefined" ? window.location.origin : "server",
     });
 
+    ConnectionController.subscribeKey("wcUri", (wcUri) => {
+      if (!wcUri) {
+        return;
+      }
+
+      logWalletConnection("walletconnect.uri.generated", {
+        wcUri,
+      });
+    });
+
+    ConnectionController.subscribeKey("wcLinking", (wcLinking) => {
+      if (!wcLinking) {
+        return;
+      }
+
+      logWalletConnection("walletconnect.mobile-link.ready", {
+        href: wcLinking.href,
+        walletName: wcLinking.name,
+      });
+    });
+
     const singleton = {
       appKit,
       queryClient,
@@ -80,7 +96,18 @@ export const getWalletConnectionErrorMessage = (error: unknown) => {
 
 export const wagmiConfig = wagmiAdapter.wagmiConfig;
 
-export const openWalletConnectionModal = () => appKit.open({ view: "Connect" });
+export const openWalletConnectionModal = (options?: { uri?: string }) =>
+  appKit.open({
+    view: "Connect",
+    ...(options?.uri ? { uri: options.uri } : {}),
+  });
+
+export const resumeWalletConnectionFromUri = async (uri: string) => {
+  logWalletConnection("walletconnect.uri.resume.requested", {
+    wcUri: uri,
+  });
+  await openWalletConnectionModal({ uri });
+};
 
 export const waitForWalletConnection = (timeoutMs = 15000) =>
   new Promise<string>((resolve, reject) => {

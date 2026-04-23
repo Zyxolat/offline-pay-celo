@@ -10,6 +10,16 @@ const getTransactionsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
+const syncTransactionSchema = z.object({
+  txHash: z.string().trim().min(1),
+  recipient: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  amount: z.string().trim().refine((value) => !Number.isNaN(Number(value)) && Number(value) >= 0).optional(),
+  currency: z.string().trim().min(1).optional(),
+  status: z.enum(['submitted', 'pending', 'confirmed', 'failed']).optional(),
+  confirmations: z.number().int().min(0).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
 const withdrawSchema = z.object({
   destinationAddress: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/),
   token: z.enum(['CELO', 'cUSD']),
@@ -63,6 +73,38 @@ export const walletController = {
     } catch (error) {
       console.error('Get transactions error:', normalizeError(error));
       errorResponse(res, 'Failed to fetch transactions', 500);
+    }
+  },
+
+  async syncTransaction(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return errorResponse(res, 'Unauthorized', 401);
+      }
+
+      const parsedPayload = syncTransactionSchema.safeParse(req.body);
+      if (!parsedPayload.success) {
+        return errorResponse(res, 'Invalid request input', 400, parsedPayload.error.flatten());
+      }
+
+      const payload = parsedPayload.data;
+      if (!payload) {
+        return;
+      }
+
+      const result = await walletService.syncTransaction(req.user.userId, {
+        txHash: payload.txHash,
+        recipient: payload.recipient,
+        amount: payload.amount,
+        currency: payload.currency,
+        status: payload.status,
+        confirmations: payload.confirmations,
+        note: payload.note,
+      });
+      successResponse(res, result, 201);
+    } catch (error) {
+      console.error('Sync transaction error:', normalizeError(error));
+      errorResponse(res, 'Failed to sync transaction', 400);
     }
   },
 
